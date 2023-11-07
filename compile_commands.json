@@ -1,0 +1,99 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/main.o",
+      "src/main.c"
+    ],
+    "directory": "/Users/louissven.goulet/Documents/Projects/C/edit",
+    "file": "/Users/louissven.goulet/Documents/Projects/C/edit/src/main.c",
+    "output": "/Users/louissven.goulet/Documents/Projects/C/edit/build/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/vt.o",
+      "src/vt.c"
+    ],
+    "directory": "/Users/louissven.goulet/Documents/Projects/C/edit",
+    "file": "/Users/louissven.goulet/Documents/Projects/C/edit/src/vt.c",
+    "output": "/Users/louissven.goulet/Documents/Projects/C/edit/build/vt.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/editor.o",
+      "src/editor.c"
+    ],
+    "directory": "/Users/louissven.goulet/Documents/Projects/C/edit",
+    "file": "/Users/louissven.goulet/Documents/Projects/C/edit/src/editor.c",
+    "output": "/Users/louissven.goulet/Documents/Projects/C/edit/build/editor.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/termkey.o",
+      "src/termkey.c"
+    ],
+    "directory": "/Users/louissven.goulet/Documents/Projects/C/edit",
+    "file": "/Users/louissven.goulet/Documents/Projects/C/edit/src/termkey.c",
+    "output": "/Users/louissven.goulet/Documents/Projects/C/edit/build/termkey.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/xalloc.o",
+      "src/xalloc.c"
+    ],
+    "directory": "/Users/louissven.goulet/Documents/Projects/C/edit",
+    "file": "/Users/louissven.goulet/Documents/Projects/C/edit/src/xalloc.c",
+    "output": "/Users/louissven.goulet/Documents/Projects/C/edit/build/xalloc.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/gcc",
+      "-Isrc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/tests_test.o",
+      "tests/test.c"
+    ],
+    "directory": "/Users/louissven.goulet/Documents/Projects/C/edit",
+    "file": "/Users/louissven.goulet/Documents/Projects/C/edit/tests/test.c",
+    "output": "/Users/louissven.goulet/Documents/Projects/C/edit/build/tests_test.o"
+  }
+]
