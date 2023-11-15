@@ -73,7 +73,7 @@ void cleanup(void) {
 
 void cleanup_err(int _i __attribute__((unused))) {
     dprintf(STDOUT_FILENO, CUR_SHOW);
-    exit(1);
+    _exit(1);
 }
 
 // parameter is ignored

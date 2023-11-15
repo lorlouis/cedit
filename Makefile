@@ -6,8 +6,9 @@ SRC_DIR = src
 BUILD_DIR = build
 TEST_DIR = tests
 OUT	= a.out
-CC	= gcc
-FLAGS	= --std=gnu17 -g -Wall -Wextra
+CC	?= gcc
+EXTRAFLAGS ?=
+FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS)
 LFLAGS	=
 
 ENTRYPOINT_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(ENTRYPOINT))

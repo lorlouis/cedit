@@ -90,11 +90,15 @@ int readkey(int fd, struct KeyEvent *restrict e) {
                 e->key = ' ';
                 e->modifier = KM_Ctrl;
                 break;
+            case '\t':
+                e->key = '\t';
+                e->modifier = 0;
+                break;
             case '\n':
                 e->key = '\n';
                 e->modifier = 0;
                 break;
-            case 1 ... 9:
+            case 1 ... 8:
             case 11 ... 26:
                 // a..=z
                 e->key = 'a' + c - 1;

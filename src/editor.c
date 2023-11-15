@@ -339,7 +339,7 @@ int view_render(struct View *v, struct ViewPort *vp, struct winsize *ws, struct 
 
     size_t *extra_render_line_per_line = xcalloc(real_height, sizeof(size_t));
     size_t line_off = 0;
-    uint16_t cursor_line_off;
+    uint16_t cursor_line_off = 0;
 
     for(size_t i = 0;
             i + v->line_off < v->buff->lines_len && i + line_off <= real_height;
