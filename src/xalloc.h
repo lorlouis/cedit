@@ -2,6 +2,9 @@
 #define XALLOC_H 1
 
 #include <stddef.h>
+#include <assert.h>
+
+#define TODO(msg) assert(0 && #msg)
 
 // Allocs `s` bytes or panics
 void *xmalloc(size_t s);

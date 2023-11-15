@@ -190,7 +190,7 @@ int write_escaped(int fd, const char *restrict line, size_t len) {
     return count;
 }
 
-uint16_t viewport_viewable_width(struct ViewPort *vp, struct winsize *ws) {
+uint16_t viewport_viewable_width(const struct ViewPort *vp, const struct winsize *ws) {
     uint16_t real_width = vp->width;
     if(vp->width + vp->off_x > ws->ws_col) {
         real_width = vp->width - ((vp->width + vp->off_x) - ws->ws_col);
@@ -198,21 +198,21 @@ uint16_t viewport_viewable_width(struct ViewPort *vp, struct winsize *ws) {
     return real_width;
 }
 
-uint16_t viewport_viewable_height(struct ViewPort *vp, struct winsize *ws) {
+uint16_t viewport_viewable_height(const struct ViewPort *vp, const struct winsize *ws) {
     uint16_t real_height = vp->height;
-    if(vp->height + vp->off_y > ws->ws_row) {
+    if(vp->height + vp->off_y >= ws->ws_row) {
         real_height = vp->height - ((vp->height + vp->off_y) - ws->ws_row);
     }
     return real_height;
 }
 
-uint16_t viewport_width_clamp(struct ViewPort *vp, struct winsize *ws, uint16_t v) {
+uint16_t viewport_width_clamp(const struct ViewPort *vp, const struct winsize *ws, uint16_t v) {
     if(v < vp->off_x) return vp->off_x;
     if(v > vp->off_x + ws->ws_col -1) return vp->off_x + ws->ws_col -1;
     return v;
 }
 
-uint16_t viewport_height_clamp(struct ViewPort *vp, struct winsize *ws, uint16_t v) {
+uint16_t viewport_height_clamp(const struct ViewPort *vp, const struct winsize *ws, uint16_t v) {
     if(v < vp->off_y) return vp->off_y;
     if(v > vp->off_y + ws->ws_row-1) return vp->off_y + ws->ws_row-1;
     return v;
@@ -320,7 +320,7 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
     view_set_cursor(v, new_x, new_y);
 }
 
-int view_render(struct View *v, struct ViewPort *vp, struct winsize *ws, struct AbsoluteCursor *ac) {
+int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     uint16_t real_width = viewport_viewable_width(vp, ws);
     uint16_t real_height = viewport_viewable_height(vp, ws);
 
@@ -340,19 +340,14 @@ int view_render(struct View *v, struct ViewPort *vp, struct winsize *ws, struct 
     size_t *extra_render_line_per_line = xcalloc(real_height, sizeof(size_t));
     size_t line_off = 0;
     uint16_t cursor_line_off = 0;
-
-    for(size_t i = 0;
+    size_t i = 0;
+    for(;
             i + v->line_off < v->buff->lines_len && i + line_off <= real_height;
             i++) {
         struct Line l = v->buff->lines[i+v->line_off];
-        // adjust y offset for cursor
-        if(v->view_cursor.off_y >= i+v->line_off) {
-            cursor_line_off = line_off;
-        }
 
         size_t char_off = 0;
         size_t extra_render_line_count = 0;
-
         while(i + line_off + extra_render_line_count <= real_height) {
             ssize_t len = 0;
             size_t take_width = real_width - num_width;
@@ -366,7 +361,16 @@ int view_render(struct View *v, struct ViewPort *vp, struct winsize *ws, struct 
 
             set_cursor_pos(vp->off_x, vp->off_y+i+line_off + extra_render_line_count);
 
-            if(num_width) dprintf(STDOUT_FILENO, "%-*ld", num_width, i + v->line_off + 1);
+            if (num_width) {
+                dprintf(
+                    STDOUT_FILENO,
+                    "%s%*ld%s ",
+                    CSI "90m",
+                    num_width - 1,
+                    i + v->line_off + 1,
+                    CSI "39;49m"
+                );
+            }
 
             write_escaped(STDOUT_FILENO, l.buf + char_off, len);
             // fill the rest of the line, useful when views overlap
@@ -383,7 +387,19 @@ int view_render(struct View *v, struct ViewPort *vp, struct winsize *ws, struct 
         }
         extra_render_line_per_line[i] = extra_render_line_count;
         line_off += extra_render_line_count;
+
+        // adjust y offset for cursor
+        if(v->view_cursor.off_y > i+v->line_off) {
+            cursor_line_off = line_off;
+        }
+
     }
+
+    for(int j = i + line_off; j <= real_height; j++) {
+            set_cursor_pos(vp->off_x, vp->off_y+j);
+            dprintf(STDOUT_FILENO, "%*s", real_width, " ");
+    }
+
     if(ac) {
         struct Line *line = v->buff->lines + v->view_cursor.off_y;
         uint16_t col = count_cols(line->buf, v->view_cursor.off_x, 4);
@@ -406,7 +422,7 @@ int view_render(struct View *v, struct ViewPort *vp, struct winsize *ws, struct 
             uint16_t diff = row - vp->height;
             uint16_t line_off = 0;
             uint16_t render_lines = 0;
-            while(render_lines < diff) {
+            while(render_lines <= diff) {
                 render_lines += extra_render_line_per_line[line_off]+1;
                 line_off += 1;
             }
@@ -439,25 +455,65 @@ int buffer_rc_dec(struct Buffer *buff) {
     return 0;
 }
 
-int window_render(struct Window *w, struct ViewPort *vp, struct winsize *ws, struct AbsoluteCursor *ac) {
-    while(w) {
-        if(w->child) {
-            assert(0 && "todo");
-        } else {
-            for(size_t i = 0; i < w->view_stack_len; i++) {
-                view_render(w->view_stack + i, vp, ws, ac);
-            }
+int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
+    struct ViewPort self_vp = *vp;
+    if(w->child) {
+        struct ViewPort sub_vp;
+        switch(w->split_dir) {
+            case SD_Vertical: {
+                // Look mah! No npm
+                int is_odd = (self_vp.width-1) % 2;
+                int is_even = !is_odd;
+                self_vp.width = (self_vp.width-1) / 2;
+                sub_vp = self_vp;
+                sub_vp.off_x += self_vp.width+is_odd;
+                self_vp.width -= is_even;
+
+                // render split line
+                for(int i = 0; i <= self_vp.height; i++) {
+                    set_cursor_pos(self_vp.width + vp->off_x, i + vp->off_y);
+                    dprintf(STDOUT_FILENO, "%s", CSI"90m" "|" CSI"39;49m");
+                }
+            } break;
+            case SD_Horizontal: {
+                int is_odd = (self_vp.height-1) % 2;
+                int is_even = !is_odd;
+                self_vp.height = (self_vp.height-1) / 2;
+                sub_vp = self_vp;
+                sub_vp.off_y += self_vp.height+1+is_odd;
+                self_vp.height -= is_even;
+
+                // render split line
+                for(int i = 0; i <= self_vp.width; i++) {
+                    set_cursor_pos(i + vp->off_x, vp->off_y+self_vp.height+1);
+                    dprintf(STDOUT_FILENO, "%s", CSI"90m" "-" CSI"39;49m");
+                }
+
+            } break;
         }
-        w = w->child;
+        // render subwindow(s)
+        window_render(w->child, &sub_vp, ws, ac);
+        // render self window
+        for(size_t i = 0; i < w->view_stack_len; i++) {
+            view_render(w->view_stack + i, &self_vp, ws, ac);
+        }
+        self_vp = sub_vp;
+    } else {
+        for(size_t i = 0; i < w->view_stack_len; i++) {
+            view_render(w->view_stack + i, &self_vp, ws, ac);
+        }
     }
     return 0;
 }
 
 struct View* tab_active_view(struct Tab *tab) {
     struct Window *w = tab->w;
+    /*
+    // select last window
     for(size_t i = 0; i < tab->active_window; i++) {
         w = w->child;
     }
+    */
 
     return w->view_stack + (w->view_stack_len-1);
 }
@@ -564,8 +620,7 @@ int normal_handle_key(struct KeyEvent *e) {
 
 int insert_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(TABS + ACTIVE_TAB);
-    wchar_t c = 0;
-    if(e->key == (enum KeyCode)'\e') {
+    if(e->key == '\e') {
         mode_change(M_Normal);
         return 0;
     } else if(e->key == KC_BACKSPACE) {

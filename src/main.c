@@ -68,16 +68,19 @@ void term_init(void) {
 }
 
 void cleanup(void) {
+    dprintf(STDOUT_FILENO, CUR_SHOW);
     exit(0);
 }
 
 void cleanup_err(int _i __attribute__((unused))) {
     dprintf(STDOUT_FILENO, CUR_SHOW);
-    _exit(1);
+    // this is not safe in a signal handler
+    exit(1);
 }
 
-// parameter is ignored
+// i parameter is ignored
 void on_resize(int i) {
+    (void)i;
     int winsize_call = TIOCGWINSZ;
     int res = ioctl(STDOUT_FILENO, winsize_call, &WS);
     if(-1 == res) {
@@ -135,8 +138,8 @@ int main(int argc, const char **argv) {
                 "handle ioctl resize properly, bailing out");
         exit(1);
         */
-        WS.ws_col = 24;
-        WS.ws_row = 12;
+        WS.ws_col = 47;
+        WS.ws_row = 35;
     }
 
     // register signals
@@ -161,6 +164,15 @@ int main(int argc, const char **argv) {
         },
     };
 
+    struct View v2 = {
+        .buff = &buff,
+        .line_off = 0,
+        .view_cursor = {
+            .off_x = 0,
+            .off_y = 0,
+        },
+    };
+
     // switch to alternate
     alternate_buf_enter();
     // register hook to return to normal buffer on exit
@@ -168,12 +180,14 @@ int main(int argc, const char **argv) {
 
     struct Window win = {
         .child = NULL,
-        .height = WS.ws_row,
-        .width = WS.ws_col,
         .split_dir = SD_Vertical,
         .view_stack = &v,
         .view_stack_len = 1,
     };
+
+    struct Window win2 = win;
+    win2.view_stack = &v2;
+    win.child = &win2;
 
     struct Tab tab = {
         .name = NULL,

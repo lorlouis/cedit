@@ -107,8 +107,6 @@ enum SplitDir {
 };
 
 struct Window {
-    uint16_t width;
-    uint16_t height;
     enum SplitDir split_dir;
     struct Window *child;
     struct View *view_stack;
@@ -147,13 +145,13 @@ int buffer_init_from_path(
 // Frees the content of buffer
 void buffer_cleanup(struct Buffer *buff);
 
-uint16_t viewport_viewable_width(struct ViewPort *vp, struct winsize *ws);
-uint16_t viewport_viewable_height(struct ViewPort *vp, struct winsize *ws);
+uint16_t viewport_viewable_width(const struct ViewPort *vp, const struct winsize *ws);
+uint16_t viewport_viewable_height(const struct ViewPort *vp, const struct winsize *ws);
 
 int view_render(
         struct View *v,
         struct ViewPort *vp,
-        struct winsize *ws,
+        const struct winsize *ws,
         struct AbsoluteCursor *ac);
 
 void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y);

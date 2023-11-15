@@ -48,7 +48,7 @@ enum KeyModifier {
 struct KeyEvent {
     // bitset of `KeyModifier values`
     int modifier;
-    enum KeyCode key;
+    unsigned int key;
 };
 
 // Returns
