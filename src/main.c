@@ -186,8 +186,12 @@ int main(int argc, const char **argv) {
     };
 
     struct Window win2 = win;
+    struct Window win3 = win;
+    win3.view_stack = &v;
     win2.view_stack = &v2;
     win.child = &win2;
+    win2.split_dir = SD_Horizontal;
+    win2.child = &win3;
 
     struct Tab tab = {
         .name = NULL,

@@ -4,7 +4,6 @@
 
 #include <string.h>
 #include <assert.h>
-#include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -455,6 +454,11 @@ int buffer_rc_dec(struct Buffer *buff) {
     return 0;
 }
 
+struct Tab *TABS = 0;
+size_t TABS_LEN = 0;
+size_t TABS_CAP = 0;
+size_t ACTIVE_TAB = 0;
+
 int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     struct ViewPort self_vp = *vp;
     if(w->child) {
@@ -491,37 +495,53 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
 
             } break;
         }
-        // render subwindow(s)
         window_render(w->child, &sub_vp, ws, ac);
-        // render self window
-        for(size_t i = 0; i < w->view_stack_len; i++) {
-            view_render(w->view_stack + i, &self_vp, ws, ac);
+        // render subwindow(s)
+        if(tab_active_window(TABS + ACTIVE_TAB) == w) {
+            // render self window with cursor
+            for(size_t i = 0; i < w->view_stack_len; i++) {
+                view_render(w->view_stack + i, &self_vp, ws, ac);
+            }
+        } else {
+            // render self window
+            for(size_t i = 0; i < w->view_stack_len; i++) {
+                view_render(w->view_stack + i, &self_vp, ws, 0);
+            }
         }
         self_vp = sub_vp;
     } else {
-        for(size_t i = 0; i < w->view_stack_len; i++) {
-            view_render(w->view_stack + i, &self_vp, ws, ac);
+        if(tab_active_window(TABS + ACTIVE_TAB) == w) {
+            // render self window with cursor
+            for(size_t i = 0; i < w->view_stack_len; i++) {
+                view_render(w->view_stack + i, &self_vp, ws, ac);
+            }
+        } else {
+            // render self window
+            for(size_t i = 0; i < w->view_stack_len; i++) {
+                view_render(w->view_stack + i, &self_vp, ws, 0);
+            }
         }
     }
     return 0;
 }
 
-struct View* tab_active_view(struct Tab *tab) {
+struct Window* tab_get_window(struct Tab *tab, size_t idx) {
     struct Window *w = tab->w;
-    /*
-    // select last window
-    for(size_t i = 0; i < tab->active_window; i++) {
+    // select current window
+    for(size_t i = 0; i < idx; i++) {
         w = w->child;
     }
-    */
-
-    return w->view_stack + (w->view_stack_len-1);
+    return w;
 }
 
-struct Tab *TABS = 0;
-size_t TABS_LEN = 0;
-size_t TABS_CAP = 0;
-size_t ACTIVE_TAB = 0;
+struct Window* tab_active_window(struct Tab *tab) {
+    return tab_get_window(tab, tab->active_window);
+}
+
+struct View* tab_active_view(struct Tab *tab) {
+    struct Window *w = tab_active_window(tab);
+    return w->view_stack + (w->view_stack_len-1);
+}
 
 int tabs_prev(void) {
     if(ACTIVE_TAB > 0) {
@@ -534,6 +554,54 @@ int tabs_next(void) {
     if(ACTIVE_TAB >= TABS_LEN) return ACTIVE_TAB;
     ACTIVE_TAB += 1;
     return ACTIVE_TAB;
+}
+
+int tabs_win_select(enum Direction dir) {
+    struct Tab *cur_tab = TABS + ACTIVE_TAB;
+    struct Window *cur_window = tab_active_window(cur_tab);
+    switch(dir) {
+        // looks for next window
+        case DIR_Down: {
+            if(cur_window->split_dir == SD_Horizontal && cur_window->child) {
+                cur_tab->active_window += 1;
+            }
+        } break;
+        case DIR_Right: {
+            if(cur_window->split_dir == SD_Vertical && cur_window->child) {
+                cur_tab->active_window += 1;
+            }
+        } break;
+        // looks for prev window
+        case DIR_Up: {
+            int offset = cur_tab->active_window;
+            offset -= 1;
+
+            while(offset >= 0) {
+                cur_window = tab_get_window(cur_tab, offset);
+                if(cur_window->split_dir == SD_Horizontal) {
+                    cur_tab->active_window = offset;
+                    break;
+                }
+                offset-=1;
+            }
+        } break;
+        case DIR_Left: {
+            int offset = cur_tab->active_window;
+            offset -= 1;
+
+            while(offset >= 0) {
+                cur_window = tab_get_window(cur_tab, offset);
+                if(cur_window->split_dir == SD_Vertical) {
+                    cur_tab->active_window = offset;
+                    break;
+                }
+                offset-=1;
+            }
+
+        } break;
+    }
+
+    return 0;
 }
 
 int tabs_push(struct Tab tab) {
@@ -614,7 +682,24 @@ int normal_handle_key(struct KeyEvent *e) {
             default:
                 break;
         }
+    } else if (e->modifier == KM_Ctrl) {
+        switch(e->key) {
+            case KC_ARRLEFT:
+            case 'h': {
+                tabs_prev();
+            } break;
+            case KC_ARRRIGHT:
+            case 'l': {
+                tabs_next();
+            } break;
+            case 'w': {
+                mode_change(M_Window);
+            } break;
+            default:
+                break;
+        }
     }
+
     return 0;
 }
 
@@ -669,6 +754,41 @@ int insert_handle_key(struct KeyEvent *e) {
     return 0;
 }
 
+int window_handle_key(struct KeyEvent *e) {
+    switch(e->key) {
+        case KC_ARRDOWN:
+        case 'j': {
+            tabs_win_select(DIR_Down);
+            mode_change(M_Normal);
+        } break;
+        case KC_ARRUP:
+        case 'k': {
+            tabs_win_select(DIR_Up);
+            mode_change(M_Normal);
+        } break;
+        case KC_ARRLEFT:
+        case 'h': {
+            tabs_win_select(DIR_Left);
+            mode_change(M_Normal);
+        } break;
+        case KC_ARRRIGHT:
+        case 'l': {
+            tabs_win_select(DIR_Right);
+            mode_change(M_Normal);
+        } break;
+        case 'i': {
+            mode_change(M_Insert);
+        } break;
+        case '\e': {
+            mode_change(M_Normal);
+       } break;
+        default:
+            break;
+    }
+    return 0;
+}
+
+
 static struct ModeInterface MODES[] = {
     (struct ModeInterface){
         .mode_str = "NOR",
@@ -679,6 +799,12 @@ static struct ModeInterface MODES[] = {
     (struct ModeInterface){
         .mode_str = "INS",
         .handle_key = insert_handle_key,
+        .on_enter = 0,
+        .on_leave = 0,
+    },
+    (struct ModeInterface){
+        .mode_str = "WIN",
+        .handle_key = window_handle_key,
         .on_enter = 0,
         .on_leave = 0,
     },
@@ -716,12 +842,13 @@ int active_line_render(struct winsize *ws) {
     struct View *v = tab_active_view(TABS + ACTIVE_TAB);
 
     dprintf(STDOUT_FILENO,
-            "[%s] (%ld, %ld) %ld/%ld",
+            "[%s] (%ld, %ld) %ld/%ld %ld",
             mode_current().mode_str,
             v->view_cursor.off_x + 1,
             v->view_cursor.off_y + 1,
             v->line_off + 1,
-            v->buff->lines_len);
+            v->buff->lines_len,
+            TABS[ACTIVE_TAB].active_window);
 
     return 0;
 }

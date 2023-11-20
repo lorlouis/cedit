@@ -40,6 +40,7 @@ struct Input {
 enum Mode {
     M_Normal = 0,
     M_Insert = 1,
+    M_Window = 2,
 };
 
 struct ModeInterface {
@@ -99,6 +100,13 @@ struct View {
     struct ViewCursor view_cursor;
     struct Buffer *buff;
     struct ViewOpt options;
+};
+
+enum Direction {
+    DIR_Up = 1,
+    DIR_Down,
+    DIR_Left,
+    DIR_Right
 };
 
 enum SplitDir {
@@ -163,6 +171,8 @@ int tabs_next(void);
 int tabs_push(struct Tab tab);
 
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
+
+struct Window* tab_active_window(struct Tab *tab);
 
 int editor_render(struct winsize *ws);
 
