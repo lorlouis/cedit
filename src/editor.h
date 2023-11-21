@@ -10,6 +10,8 @@
 
 struct AbsoluteCursor;
 
+extern struct winsize WS;
+
 enum FileMode {
     FM_RW,
     FM_RO,
@@ -41,6 +43,7 @@ enum Mode {
     M_Normal = 0,
     M_Insert = 1,
     M_Window = 2,
+    M_Command = 3,
 };
 
 struct ModeInterface {
@@ -100,6 +103,7 @@ struct View {
     struct ViewCursor view_cursor;
     struct Buffer *buff;
     struct ViewOpt options;
+    struct ViewPort *vp;
 };
 
 enum Direction {
@@ -119,6 +123,7 @@ struct Window {
     struct Window *child;
     struct View *view_stack;
     size_t view_stack_len;
+    size_t active_view;
 };
 
 struct Tab {

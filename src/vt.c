@@ -1,7 +1,6 @@
 #include "vt.h"
 
 #include <wchar.h>
-#include <assert.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,8 +8,9 @@
 
 // writes to stdout
 int set_cursor_pos(uint16_t row, uint16_t col) {
-    //assert(row > 0 && col > 0 && "position is 1 indexed");
-    return dprintf(STDOUT_FILENO, CSI "%d;%dH", col + 1, row + 1);
+    int ret = dprintf(STDOUT_FILENO, CSI "%d;%dH", col + 1, row + 1);
+    if(ret < 0) return ret;
+    return fsync(STDOUT_FILENO);
 }
 
 #define STRLEN(x) x, ((sizeof(x)/sizeof(char)) -1)

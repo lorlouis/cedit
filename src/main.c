@@ -7,12 +7,9 @@
 #include <sys/termios.h>
 #include <string.h>
 
-#include "xalloc.h"
 #include "termkey.h"
 #include "vt.h"
 #include "editor.h"
-
-struct winsize WS = {0};
 
 struct termios INITIAL = {0};
 
@@ -155,12 +152,30 @@ int main(int argc, const char **argv) {
         exit(1);
     }
 
-    struct View v = {
-        .buff = &buff,
-        .line_off = 0,
-        .view_cursor = {
-            .off_x = 0,
-            .off_y = 0,
+    struct Buffer buff2 = {0};
+
+    struct View views[2] = {
+        {
+            .buff = &buff,
+            .line_off = 0,
+            .view_cursor = {
+                .off_x = 0,
+                .off_y = 0,
+            },
+        },
+        {
+            .buff = &buff2,
+            .line_off = 3,
+            .view_cursor = {
+                .off_x = 0,
+                .off_y = 0,
+            },
+            .vp = &(struct ViewPort) {
+                .height = 4,
+                .width = 32,
+                .off_x = 7,
+                .off_y = 10,
+            }
         },
     };
 
@@ -181,17 +196,19 @@ int main(int argc, const char **argv) {
     struct Window win = {
         .child = NULL,
         .split_dir = SD_Vertical,
-        .view_stack = &v,
+        .view_stack = views,
         .view_stack_len = 1,
     };
 
     struct Window win2 = win;
     struct Window win3 = win;
-    win3.view_stack = &v;
+    win3.view_stack = views;
     win2.view_stack = &v2;
     win.child = &win2;
     win2.split_dir = SD_Horizontal;
     win2.child = &win3;
+
+    win.view_stack_len = 2;
 
     struct Tab tab = {
         .name = NULL,

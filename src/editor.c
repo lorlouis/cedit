@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "vt.h"
 #include "xalloc.h"
+#include "str.h"
 
 #include <string.h>
 #include <assert.h>
@@ -12,10 +13,17 @@
 
 #define TAB_WIDTH 4
 
+struct winsize WS = {0};
+
 struct AbsoluteCursor {
     uint16_t col;
     uint16_t row;
 };
+
+struct {
+    Str msg;
+    size_t cursor_position;
+} MESSAGE_LINE = {0};
 
 FILE* filemode_open(
         enum FileMode fm,
@@ -74,8 +82,6 @@ int filemode_save(
     fclose(f);
     return 0;
 }
-
-
 
 int buffer_init_from_path(
         struct Buffer *buff,
@@ -303,9 +309,9 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
 }
 
 void view_set_cursor(struct View *v, size_t x, size_t y) {
+    if(!v->buff || !v->buff->lines) return;
     v->view_cursor.off_y = y < v->buff->lines_len ? y : v->buff->lines_len-1;
     struct Line *l = v->buff->lines + v->view_cursor.off_y;
-    //size_t line_len = count_cols(l->buf, l->len, TAB_WIDTH);
 
     v->view_cursor.off_x = x < l->len ? x : l->len;
 }
@@ -320,8 +326,14 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 }
 
 int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
-    uint16_t real_width = viewport_viewable_width(vp, ws);
-    uint16_t real_height = viewport_viewable_height(vp, ws);
+    struct ViewPort *real_vp = vp;
+
+    if(v->vp) {
+        real_vp = v->vp;
+    }
+
+    uint16_t real_width = viewport_viewable_width(real_vp, ws);
+    uint16_t real_height = viewport_viewable_height(real_vp, ws);
 
     if (v->line_off > v->view_cursor.off_y) {
         v->line_off = v->view_cursor.off_y;
@@ -358,7 +370,7 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             assert(len >= 0 && "bad string");
             assert(l.buf[char_off+len] != '\n' && "newline in middle of line");
 
-            set_cursor_pos(vp->off_x, vp->off_y+i+line_off + extra_render_line_count);
+            set_cursor_pos(real_vp->off_x, real_vp->off_y+i+line_off + extra_render_line_count);
 
             if (num_width) {
                 dprintf(
@@ -395,20 +407,30 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
     }
 
     for(int j = i + line_off; j <= real_height; j++) {
-            set_cursor_pos(vp->off_x, vp->off_y+j);
-            dprintf(STDOUT_FILENO, "%*s", real_width, " ");
+        set_cursor_pos(real_vp->off_x, real_vp->off_y+j);
+        if (num_width) {
+            dprintf(
+                STDOUT_FILENO,
+                "%s%*c%s ",
+                CSI "90m",
+                num_width - 1,
+                '~',
+                CSI "39;49m"
+            );
+        }
+        dprintf(STDOUT_FILENO, "%*s", real_width-num_width, " ");
     }
 
-    if(ac) {
+    if(ac && v->buff->lines) {
         struct Line *line = v->buff->lines + v->view_cursor.off_y;
         uint16_t col = count_cols(line->buf, v->view_cursor.off_x, 4);
         uint16_t row = v->view_cursor.off_y - v->line_off + cursor_line_off;
 
-        if(col >= vp->width - num_width) {
-            int16_t diff = col - (vp->width - num_width);
+        if(col >= real_vp->width - num_width) {
+            int16_t diff = col - (real_vp->width - num_width);
             size_t len = 0;
             while(diff >= 0) {
-                size_t take_width = vp->width - num_width;
+                size_t take_width = real_vp->width - num_width;
                 size_t new_len = take_cols(line->buf + len, v->view_cursor.off_x - len, &take_width, 4);
                 row += 1;
                 col -= take_width;
@@ -417,8 +439,8 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             }
         }
 
-        if(row > vp->height) {
-            uint16_t diff = row - vp->height;
+        if(row > real_vp->height) {
+            uint16_t diff = row - real_vp->height;
             uint16_t line_off = 0;
             uint16_t render_lines = 0;
             while(render_lines <= diff) {
@@ -431,9 +453,12 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             return view_render(v, vp, ws, ac);
         }
         else {
-            ac->col = viewport_width_clamp(vp, ws, col + num_width + vp->off_x);
-            ac->row = viewport_height_clamp(vp, ws, row + vp->off_y);
+            ac->col = viewport_width_clamp(real_vp, ws, col + num_width + real_vp->off_x);
+            ac->row = viewport_height_clamp(real_vp, ws, row + real_vp->off_y);
         }
+    } else if (ac && !v->buff->lines) {
+        ac->col = viewport_width_clamp(real_vp, ws, num_width + real_vp->off_x);
+        ac->row = viewport_height_clamp(real_vp, ws, real_vp->off_y);
     }
     free(extra_render_line_per_line);
 
@@ -500,7 +525,11 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
         if(tab_active_window(TABS + ACTIVE_TAB) == w) {
             // render self window with cursor
             for(size_t i = 0; i < w->view_stack_len; i++) {
-                view_render(w->view_stack + i, &self_vp, ws, ac);
+                if(i == w->active_view) {
+                    view_render(w->view_stack + i, &self_vp, ws, ac);
+                } else {
+                    view_render(w->view_stack + i, &self_vp, ws, 0);
+                }
             }
         } else {
             // render self window
@@ -513,7 +542,11 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
         if(tab_active_window(TABS + ACTIVE_TAB) == w) {
             // render self window with cursor
             for(size_t i = 0; i < w->view_stack_len; i++) {
-                view_render(w->view_stack + i, &self_vp, ws, ac);
+                if(i == w->active_view) {
+                    view_render(w->view_stack + i, &self_vp, ws, ac);
+                } else {
+                    view_render(w->view_stack + i, &self_vp, ws, 0);
+                }
             }
         } else {
             // render self window
@@ -540,7 +573,7 @@ struct Window* tab_active_window(struct Tab *tab) {
 
 struct View* tab_active_view(struct Tab *tab) {
     struct Window *w = tab_active_window(tab);
-    return w->view_stack + (w->view_stack_len-1);
+    return w->view_stack + w->active_view;
 }
 
 int tabs_prev(void) {
@@ -679,6 +712,9 @@ int normal_handle_key(struct KeyEvent *e) {
             case 'i': {
                 mode_change(M_Insert);
             } break;
+            case ':': {
+                mode_change(M_Command);
+            } break;
             default:
                 break;
         }
@@ -754,6 +790,26 @@ int insert_handle_key(struct KeyEvent *e) {
     return 0;
 }
 
+void view_next(void) {
+    struct Tab *cur_tab = TABS + ACTIVE_TAB;
+    struct Window *cw = tab_active_window(cur_tab);
+    if(cw->view_stack_len > 0 && cw->active_view < cw->view_stack_len-1) {
+        cw->active_view += 1;
+    } else {
+        cw->active_view = 0;
+    }
+}
+
+void view_prev(void) {
+    struct Tab *cur_tab = TABS + ACTIVE_TAB;
+    struct Window *cw = tab_active_window(cur_tab);
+    if(cw->active_view > 0) {
+        cw->active_view -= 1;
+    } else if(cw->view_stack_len > 0){
+        cw->active_view = cw->view_stack_len-1;
+    }
+}
+
 int window_handle_key(struct KeyEvent *e) {
     switch(e->key) {
         case KC_ARRDOWN:
@@ -781,13 +837,76 @@ int window_handle_key(struct KeyEvent *e) {
         } break;
         case '\e': {
             mode_change(M_Normal);
-       } break;
+        } break;
+        case 'w': {
+            view_next();
+            mode_change(M_Normal);
+        } break;
+        case 's': {
+            view_prev();
+            mode_change(M_Normal);
+        } break;
         default:
             break;
     }
     return 0;
 }
 
+int command_enter(void) {
+    str_clear(&MESSAGE_LINE.msg);
+    str_push(&MESSAGE_LINE.msg, ":", 1);
+    MESSAGE_LINE.cursor_position = 1;
+    return 0;
+}
+
+int command_leave(void) {
+    str_clear(&MESSAGE_LINE.msg);
+    MESSAGE_LINE.cursor_position = 0;
+    return 0;
+}
+
+int command_handle_key(struct KeyEvent *e) {
+    // TODO(louis) handle command buffer here
+    switch(e->key) {
+        case KC_ARRDOWN:
+        case 'j': {
+            tabs_win_select(DIR_Down);
+            mode_change(M_Normal);
+        } break;
+        case KC_ARRUP:
+        case 'k': {
+            tabs_win_select(DIR_Up);
+            mode_change(M_Normal);
+        } break;
+        case KC_ARRLEFT:
+        case 'h': {
+            tabs_win_select(DIR_Left);
+            mode_change(M_Normal);
+        } break;
+        case KC_ARRRIGHT:
+        case 'l': {
+            tabs_win_select(DIR_Right);
+            mode_change(M_Normal);
+        } break;
+        case 'i': {
+            mode_change(M_Insert);
+        } break;
+        case '\e': {
+            mode_change(M_Normal);
+        } break;
+        case 'w': {
+            view_next();
+            mode_change(M_Normal);
+        } break;
+        case 's': {
+            view_prev();
+            mode_change(M_Normal);
+        } break;
+        default:
+            break;
+    }
+    return 0;
+}
 
 static struct ModeInterface MODES[] = {
     (struct ModeInterface){
@@ -807,6 +926,12 @@ static struct ModeInterface MODES[] = {
         .handle_key = window_handle_key,
         .on_enter = 0,
         .on_leave = 0,
+    },
+    (struct ModeInterface){
+        .mode_str = "COM",
+        .handle_key = command_handle_key,
+        .on_enter = command_enter,
+        .on_leave = command_leave,
     },
 };
 
@@ -853,14 +978,30 @@ int active_line_render(struct winsize *ws) {
     return 0;
 }
 
+int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
+    set_cursor_pos(0, ws->ws_row -1);
+    if(MESSAGE_LINE.msg.len) {
+        int len = MESSAGE_LINE.msg.len;
+        dprintf(STDOUT_FILENO, "%.*s", len, MESSAGE_LINE.msg.buf);
+    }
+
+    if(MESSAGE_LINE.cursor_position) {
+        ac->row = ws->ws_row -1;
+        ac->col = MESSAGE_LINE.cursor_position;
+    }
+    return 0;
+}
+
 int editor_render(struct winsize *ws) {
     struct AbsoluteCursor ac = {
         .col = 1,
         .row = 1,
     };
+
     write(STDOUT_FILENO, CLS, sizeof(CLS));
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
+    if(message_line_render(ws, &ac)) return -1;
     set_cursor_pos(ac.col, ac.row);
     return 0;
 }
