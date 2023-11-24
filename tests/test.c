@@ -9,6 +9,14 @@ TEST_START(test_take_cols)
     size_t nb_cols = 4;
     ssize_t ret = take_cols(line, sizeof(line), &nb_cols, 4);
     ASSERT(ret == 7);
+    ASSERT(0);
+TEST_END
+
+TEST_START(test_ok)
+    char line[] = "this is a test";
+    size_t nb_cols = 4;
+    ssize_t ret = take_cols(line, sizeof(line), &nb_cols, 4);
+    ASSERT(ret == 4);
 TEST_END
 
 TESTS_END
