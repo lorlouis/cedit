@@ -878,7 +878,8 @@ int command_handle_key(struct KeyEvent *e) {
         case '\e': {
         } break;
         default:
-            str_push(&MESSAGE_LINE.msg, ":", 1);
+            str_push(&MESSAGE_LINE.msg, (char*)&e->key, 1);
+            MESSAGE_LINE.cursor_position += 1;
             break;
     }
     return 0;
