@@ -1,19 +1,14 @@
 #include "vt.h"
 
-#include <stdio.h>
-#include <assert.h>
+#include "tests.h"
 
-void test_take_cols(void) {
+TESTS_START
+
+TEST_START(test_take_cols)
     char line[] = "this is a test";
     size_t nb_cols = 4;
     ssize_t ret = take_cols(line, sizeof(line), &nb_cols, 4);
+    ASSERT(ret == 4);
+TEST_END
 
-    assert(ret == 4);
-    printf("[OK]\n");
-    return;
-}
-
-int main(int argc, const char **argv) {
-    test_take_cols();
-    return 0;
-}
+TESTS_END

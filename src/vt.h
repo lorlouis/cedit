@@ -29,12 +29,6 @@ extern volatile int CUSOR_HIDDEN;
 
 int set_cursor_pos(uint16_t row, uint16_t col);
 
-// prints to the main buffer of the terminal
-// Returns
-//  >=0 on success
-//   -1 on success
-int mprint(int fd, const char *restrict fmt, ...);
-
 // Returns
 //  >=0 on success
 //   -1 on error

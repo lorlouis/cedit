@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 
 // writes to stdout
 int set_cursor_pos(uint16_t row, uint16_t col) {
@@ -16,26 +15,6 @@ int set_cursor_pos(uint16_t row, uint16_t col) {
 #define STRLEN(x) x, ((sizeof(x)/sizeof(char)) -1)
 
 volatile int IN_ALTERNATE_BUF = 0;
-
-int mprint(int fd, const char *restrict fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-
-    int needs_to_switch = IN_ALTERNATE_BUF && isatty(fd);
-
-    if(needs_to_switch) {
-        alternate_buf_leave();
-    }
-
-    int ret = vdprintf(fd, fmt, args);
-    va_end(args);
-
-    if(needs_to_switch) {
-        alternate_buf_enter();
-    }
-
-    return ret;
-}
 
 void alternate_buf_enter(void) {
     if(IN_ALTERNATE_BUF) return;

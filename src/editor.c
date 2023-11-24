@@ -867,42 +867,18 @@ int command_leave(void) {
 
 int command_handle_key(struct KeyEvent *e) {
     // TODO(louis) handle command buffer here
+    if(e->modifier == 0) {
+        if(e->key == '\e') {
+            mode_change(M_Normal);
+            return 0;
+        }
+
+    }
     switch(e->key) {
-        case KC_ARRDOWN:
-        case 'j': {
-            tabs_win_select(DIR_Down);
-            mode_change(M_Normal);
-        } break;
-        case KC_ARRUP:
-        case 'k': {
-            tabs_win_select(DIR_Up);
-            mode_change(M_Normal);
-        } break;
-        case KC_ARRLEFT:
-        case 'h': {
-            tabs_win_select(DIR_Left);
-            mode_change(M_Normal);
-        } break;
-        case KC_ARRRIGHT:
-        case 'l': {
-            tabs_win_select(DIR_Right);
-            mode_change(M_Normal);
-        } break;
-        case 'i': {
-            mode_change(M_Insert);
-        } break;
         case '\e': {
-            mode_change(M_Normal);
-        } break;
-        case 'w': {
-            view_next();
-            mode_change(M_Normal);
-        } break;
-        case 's': {
-            view_prev();
-            mode_change(M_Normal);
         } break;
         default:
+            str_push(&MESSAGE_LINE.msg, ":", 1);
             break;
     }
     return 0;
