@@ -6,7 +6,7 @@
 
 typedef uint32_t utf32;
 typedef uint16_t utf16;
-typedef uint8_t utf8;
+typedef char utf8;
 
 int utf32_len_utf8(utf32 c);
 

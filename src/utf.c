@@ -38,26 +38,26 @@ int utf8_to_utf32(utf8 *s, size_t len, utf32 *out) {
     int byte_count = utf8_byte_count(*s);
     if(byte_count < 0 || len < (size_t)byte_count) return -1;
     utf32 code = 0;
+    // extract the value present in the first byte
     switch(byte_count) {
         case 4:
             code |= (0b00000111 & *s);
-            code <<= 1;
             break;
         case 3:
             code |= (0b00001111 & *s);
-            code <<= 2;
             break;
         case 2:
             code |= (0b00011111 & *s);
-            code <<= 3;
             break;
         case 1:
             code |= (0b01111111 & *s);
             break;
     }
+    // read the follow bytes
     for(size_t i = 1; i < (size_t)byte_count; i++) {
-        code <<= 2;
-        if((s[i] & 0b11000000) == 0b11000000) return -1;
+        code <<= 6;
+        // check for invalid follow byte
+        if(s[i] & 0b01000000) return -1;
         code |= (0b00111111 & s[i]);
     }
     *out = code;
