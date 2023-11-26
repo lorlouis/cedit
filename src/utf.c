@@ -64,7 +64,11 @@ int utf8_to_utf32(utf8 *s, size_t len, utf32 *out) {
     return byte_count;
 }
 
-int utf32_to_utf8(utf32 c, utf8 *buff, size_t size);
+int utf32_to_utf8(utf32 c, utf8 *buff, size_t size) {
+    int byte_count = utf32_len_utf8(c);
+    if(byte_count < 1) return -1;
+
+}
 
 int utf16_to_utf8(utf16 *s, size_t len, utf8 *buff, size_t size);
 
