@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <limits.h>
+#include <ctype.h>
 
 #include "termkey.h"
 
@@ -20,7 +21,7 @@
 static int readuc(int fd, unsigned char *restrict i) {
     int ret = 0;
     unsigned char c = 0;
-    while((ret = read(fd, &c, 1)) > 0 && isnumber(c)) {
+    while((ret = read(fd, &c, 1)) > 0 && isdigit(c)) {
         // check for overflow
         if(c > UCHAR_MAX / 10) return -2;
         *i *= 10;

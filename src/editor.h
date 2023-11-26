@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include <sys/ttycom.h>
+#include <termio.h>
 
 struct AbsoluteCursor;
 

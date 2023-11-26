@@ -9,7 +9,7 @@ OUT	= a.out
 CC	?= gcc
 EXTRAFLAGS ?=
 FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS)
-LFLAGS	=
+LFLAGS	= -lm
 
 ENTRYPOINT_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(ENTRYPOINT))
 
