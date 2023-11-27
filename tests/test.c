@@ -1,13 +1,14 @@
-#include "vt.h"
-
 #include "tests.h"
 
+#include "vt.h"
 #include "utf.h"
 
 #include "str.h"
 #include <string.h>
 
 TESTS_START
+
+load_locale();
 
 TEST_DEF(test_take_cols)
     char line[] = "this is a test";
@@ -78,9 +79,43 @@ TEST_ENDDEF
 
 TEST_DEF(str_operations)
     Str s = str_new();
-    ASSERT(!strcmp(&s, ""));
+    ASSERT(!strcmp(str_as_cstr(&s), ""));
     str_push(&s, "this is atest", 14);
-    ASSERT(!strcmp(&s, "this is atest"));
+    ASSERT(!strcmp(s.v.buf, "this is atest"));
+TEST_ENDDEF
+
+TEST_DEF(test_code_point_to_utf8)
+{
+    utf32 code = 'a';
+    char s[4] = {0};
+    ASSERT(utf32_to_utf8(code, s, 4) == 1);
+    ASSERT(!strcmp(s, "a"));
+}
+{
+    utf32 code = 0x00a3;
+    char s[4] = {0};
+    ASSERT(utf32_to_utf8(code, s, 4) == 2);
+    ASSERT(!strcmp(s, "£"));
+}
+{
+    utf32 code = 0x20ac;
+    char s[4] = {0};
+    ASSERT(utf32_to_utf8(code, s, 4) == 3);
+    ASSERT(!strcmp(s, "€"));
+}
+{
+    utf32 code = 0x10348;
+    char s[4] = {0};
+    ASSERT(utf32_to_utf8(code, s, 4) == 4);
+    ASSERT(!strncmp(s, "𐍈", 4));
+}
+TEST_ENDDEF
+
+TEST_DEF(test_utf_to_wchar_and_back)
+    utf32 code = 0x00a3;
+    wint_t c = utf32_to_wint(code);
+    ASSERT(c != (wint_t)-1);
+    ASSERT(L'£' == c);
 TEST_ENDDEF
 
 TESTS_END

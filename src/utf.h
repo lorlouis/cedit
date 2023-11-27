@@ -3,10 +3,16 @@
 
 #include <stdint.h>
 #include <wctype.h>
+#include <stddef.h>
 
 typedef uint32_t utf32;
 typedef uint16_t utf16;
 typedef char utf8;
+
+// needs to be called at startup
+int load_locale(void);
+
+int utf8_byte_count(utf8 c);
 
 int utf32_len_utf8(utf32 c);
 

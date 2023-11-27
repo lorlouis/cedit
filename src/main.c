@@ -1,4 +1,3 @@
-#include <locale.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/signal.h>
@@ -10,26 +9,9 @@
 #include "termkey.h"
 #include "vt.h"
 #include "editor.h"
+#include "utf.h"
 
 struct termios INITIAL = {0};
-
-// for some reason sometimes lang
-// is set but the locale is not
-int reset_locale(void) {
-    char *lc_ctype = getenv("LC_CTYPE");
-    if(lc_ctype) {
-        if(!setlocale(LC_CTYPE, lc_ctype)) return -1;
-        return 0;
-    }
-
-    char *lang = getenv("LANG");
-
-    if(lang) {
-        if(!setlocale(LC_ALL, lang)) return -1;
-        return 0;
-    }
-    return 0;
-}
 
 void term_restore(void) {
     if(tcsetattr(STDOUT_FILENO, TCSANOW, &INITIAL)) {
@@ -118,7 +100,7 @@ int handle_keys(void) {
 
 int main(int argc, const char **argv) {
     // parse options
-    reset_locale();
+    load_locale();
 
     // register cleanup
     if(atexit(cleanup)) {

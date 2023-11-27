@@ -2,6 +2,7 @@
 #define TERMKEY_H 1
 #include "stddef.h"
 #include "vt.h"
+#include "utf.h"
 
 enum KeyCode {
     KC_BACKSPACE = 8,
@@ -48,7 +49,7 @@ enum KeyModifier {
 struct KeyEvent {
     // bitset of `KeyModifier values`
     int modifier;
-    unsigned int key;
+    utf32 key;
 };
 
 // Returns

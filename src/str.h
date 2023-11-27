@@ -51,6 +51,8 @@ size_t str_size(Str *s);
 
 size_t str_get_char_byte_idx(Str *s, size_t idx);
 
+char* str_as_cstr(Str *s);
+
 #ifdef UTF_H
     utf32 str_get_char(Str *s, size_t idx);
 #endif

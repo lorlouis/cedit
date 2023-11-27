@@ -140,6 +140,10 @@ size_t str_get_char_byte_idx(Str *s, size_t idx) {
 int str_get_char(Str *s, size_t idx, utf32 *out) {
     size_t index = str_get_char_byte_idx(s, idx);
     if(index == (size_t)-1) return -1;
-    if(utf8_to_utf32(s, s->v.len, out) < 0) return -1;
+    if(utf8_to_utf32(str_as_cstr(s), s->v.len, out) < 0) return -1;
     return 0;
+}
+
+char* str_as_cstr(Str *s) {
+    return (char*)s->v.buf;
 }

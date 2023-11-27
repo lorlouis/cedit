@@ -783,8 +783,9 @@ int insert_handle_key(struct KeyEvent *e) {
 
         return 0;
     } else {
-        int len = check_utf8_start(*(char *)&e->key);
-        view_write(v, (char *)&e->key, len);
+        char buff[4] = {0};
+        int len = utf32_to_utf8(e->key, buff, sizeof(buff));
+        view_write(v, buff, len);
     }
 
     return 0;

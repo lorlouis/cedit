@@ -1,7 +1,30 @@
 #include "utf.h"
+
+#include <assert.h>
+#include <limits.h>
+#include <wchar.h>
+#include <stdlib.h>
+#include <locale.h>
+
 #include "xalloc.h"
 
-static int utf8_byte_count(utf8 c) {
+int load_locale(void) {
+    char *lc_ctype = getenv("LC_CTYPE");
+    if(lc_ctype) {
+        if(!setlocale(LC_CTYPE, lc_ctype)) return -1;
+        return 0;
+    }
+
+    char *lang = getenv("LANG");
+
+    if(lang) {
+        if(!setlocale(LC_ALL, lang)) return -1;
+        return 0;
+    }
+    return 0;
+}
+
+int utf8_byte_count(utf8 c) {
     if((c & 0b11111000) == 0b11110000) return 4;
     if((c & 0b11110000) == 0b11100000) return 3;
     if((c & 0b11100000) == 0b11000000) return 2;
@@ -65,13 +88,52 @@ int utf8_to_utf32(utf8 *s, size_t len, utf32 *out) {
 
 int utf32_to_utf8(utf32 c, utf8 *buff, size_t size) {
     int byte_count = utf32_len_utf8(c);
-    if(byte_count < 1) return -1;
+    if(byte_count < 1 || (size_t)byte_count > size) return -1;
+    switch(byte_count) {
+        case 4:
+            *buff = 0b11110000;
+            *buff |= ((0b00000111 << 18) & c) >> 18;
+            break;
+        case 3:
+            *buff = 0b11100000;
+            *buff |= ((0b00001111 << 12) & c) >> 12;
+            break;
+        case 2:
+            *buff = 0b11000000;
+            *buff |= ((0b00011111 << 6) & c) >> 6;
+            break;
+        case 1:
+            *buff = (utf8)c;
+            return 1;
+    }
+    utf32 mask = 0b00111111 << ((byte_count-2) * 6);
+    for(size_t i = 1; i < (size_t)byte_count; i++) {
+        buff[i] = 0b10000000;
+        buff[i] |= (mask & c) >> ((byte_count-1-i) * 6);
+        mask >>= 6;
+    }
+    return byte_count;
 }
 
 int utf16_to_utf8(utf16 *s, size_t len, utf8 *buff, size_t size);
 
 int utf8_to_utf32(utf8 *s, size_t len, utf32 *out);
 
-wint_t utf32_to_wint(utf32 c);
+wint_t utf32_to_wint(utf32 c) {
+    static_assert(sizeof(wchar_t) == 2 || sizeof(wchar_t) == 4, "Unsupported wchar_t size");
+    char buff[4] = {0};
+    wchar_t out = 0;
+    if(sizeof(wchar_t) == 4) {
+        if(utf32_to_utf8(c, buff, sizeof(buff)) < 0) return -1;
+    } else {
+        TODO(implement to utf16);
+    }
+
+    // initialise internal state
+    mbtowc(&out, 0, 0);
+    if(mbtowc(&out, buff, sizeof(buff)) < 0) return -1;
+
+    return out;
+}
 
 utf32 wint_to_utf32(wint_t c);

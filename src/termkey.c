@@ -1,3 +1,5 @@
+#include "termkey.h"
+
 #include <stdlib.h>
 #include <wctype.h>
 #include <string.h>
@@ -6,7 +8,7 @@
 #include <limits.h>
 #include <ctype.h>
 
-#include "termkey.h"
+#include "utf.h"
 
 // Attempts to read an unsigned int from fd
 // this reads one char past the end of the number
@@ -33,15 +35,6 @@ static int readuc(int fd, unsigned char *restrict i) {
     return c;
 }
 
-// returns the number of bytes for that utf8 sequence or 1
-int check_utf8_start(char c) {
-    if((c & 0b11111000) == 0b11110000) return 4;
-    if((c & 0b11110000) == 0b11100000) return 3;
-    if((c & 0b11100000) == 0b11000000) return 2;
-    if((c & 0b11000000) == 0b10000000) return 1;
-    return 1;
-}
-
 static int read_utf8(int fd, char (*out)[4], int count) {
     int ret;
     char c;
@@ -51,7 +44,7 @@ static int read_utf8(int fd, char (*out)[4], int count) {
         // missing a byte
         if(ret == 0) return -2;
         // the next byte is invalid
-        if(count != check_utf8_start(c)+1) return -2;
+        if(count != utf8_byte_count(c)+1) return -2;
         (*out)[i] = c;
         i+= 1;
     }
@@ -68,12 +61,11 @@ int readkey(int fd, struct KeyEvent *restrict e) {
     if(ret == 0) return 0;
 
     // check for utf-8
-    int utf8_len = check_utf8_start(c);
+    int utf8_len = utf8_byte_count(c);
     if(utf8_len > 1) {
-        char wchar[4] = {c, 0, 0 , 0};
-        ret = read_utf8(fd, &wchar, utf8_len);
-        if(ret == -1) return -1;
-        e->key = *(int*)&wchar;
+        char s[4] = {c, 0, 0 , 0};
+        if(-1 == read_utf8(fd, &s, utf8_len)) return -1;
+        if(-1 == utf8_to_utf32(s, sizeof(s), &e->key)) return -1;
         e->modifier = 0;
         return 1;
     }
@@ -492,13 +484,10 @@ int keyevent_fmt(struct KeyEvent *e, char *buff, size_t len) {
         case KC_ARRLEFT:
             CHECKED_CPY("Left");
         default: {
-            int utf_size = check_utf8_start(((char*)(&e->key))[0]);
+            int utf_size = utf32_len_utf8(e->key);
             if(utf_size > 1) {
                 if(buff) {
-                    char *c = (char*)&e->key;
-                    for(int i = 0; i < utf_size; i++) {
-                        buff[off+i] = c[i];
-                    }
+                    utf32_to_utf8(e->key, buff + off, len - off - utf_size);
                 }
                 off += utf_size;
             } else if(isprint(e->key)) {
