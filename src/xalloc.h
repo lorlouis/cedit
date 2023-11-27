@@ -15,4 +15,6 @@ void *xcalloc(size_t count, size_t size);
 // Reallocs ptr or panics
 void *xrealloc(void *ptr, size_t size);
 
+void xfree(void *ptr);
+
 #endif

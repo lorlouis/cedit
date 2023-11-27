@@ -19,3 +19,8 @@ void *xrealloc(void *ptr, size_t size) {
     assert(m && "xrealloc: ran out of memory");
     return m;
 }
+
+void xfree(void *ptr) {
+    free(ptr);
+    return;
+}

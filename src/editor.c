@@ -957,9 +957,9 @@ int active_line_render(struct winsize *ws) {
 
 int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     set_cursor_pos(0, ws->ws_row -1);
-    if(MESSAGE_LINE.msg.len) {
-        int len = MESSAGE_LINE.msg.len;
-        dprintf(STDOUT_FILENO, "%.*s", len, MESSAGE_LINE.msg.buf);
+    if(MESSAGE_LINE.msg.v.len) {
+        int len = MESSAGE_LINE.msg.v.len;
+        dprintf(STDOUT_FILENO, "%.*s", len, (char*)MESSAGE_LINE.msg.v.buf);
     }
 
     if(MESSAGE_LINE.cursor_position) {

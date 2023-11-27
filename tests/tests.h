@@ -2,7 +2,6 @@
 #define TESTS_H 1
 
 #include <stdio.h>
-#include <xalloc.h>
 
 #define STRINGIFY(s) XSTRINGIFY(s)
 #define XSTRINGIFY(s) #s
