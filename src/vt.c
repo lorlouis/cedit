@@ -1,9 +1,11 @@
 #include "vt.h"
 
-#include <wchar.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#define _XOPEN_SOURCE 1
+#include <wchar.h>
 
 // writes to stdout
 int set_cursor_pos(uint16_t row, uint16_t col) {

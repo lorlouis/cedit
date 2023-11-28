@@ -11,7 +11,7 @@ typedef struct {
     void (*free_fn)(void*);
 } Vec;
 
-void vec_extend(Vec *v, void *data, size_t size);
+void vec_extend(Vec *v, const void *data, size_t size);
 
 void vec_cleanup(Vec *v);
 
@@ -40,7 +40,7 @@ Str str_new(void);
 
 Vec* str_as_vec(Str *s);
 
-void str_push(Str *s, char *o, size_t len);
+int str_push(Str *s, const char *o, size_t len);
 
 void str_clear(Str *s);
 
@@ -51,10 +51,10 @@ size_t str_size(Str *s);
 
 size_t str_get_char_byte_idx(Str *s, size_t idx);
 
-char* str_as_cstr(Str *s);
+const char* str_as_cstr(Str *s);
 
 #ifdef UTF_H
-    utf32 str_get_char(Str *s, size_t idx);
+    int str_get_char(Str *s, size_t idx, utf32 *out);
 #endif
 
 #endif

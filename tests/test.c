@@ -6,6 +6,8 @@
 #include "str.h"
 #include <string.h>
 
+#define STR_SIZE(s) s, (sizeof(s)-1)
+
 TESTS_START
 
 load_locale();
@@ -80,8 +82,23 @@ TEST_ENDDEF
 TEST_DEF(str_operations)
     Str s = str_new();
     ASSERT(!strcmp(str_as_cstr(&s), ""));
-    str_push(&s, "this is atest", 14);
+    str_push(&s, STR_SIZE("this is atest"));
     ASSERT(!strcmp(s.v.buf, "this is atest"));
+    str_push(&s, STR_SIZE(" wowo"));
+    ASSERT(!strcmp(s.v.buf, "this is atest wowo"));
+TEST_ENDDEF
+
+TEST_DEF(str_utf8_fuckery)
+    Str s = str_new();
+    ASSERT(str_push(&s, STR_SIZE("hello world")) != -1);
+    ASSERT(s.char_pos.buf == 0);
+    ASSERT(str_push(&s, STR_SIZE(" 計算(keisan)")) != -1);
+    ASSERT(s.char_pos.buf != 0);
+
+    utf32 c = 0;
+    ASSERT(str_get_char(&s, 13, &c) == 0);
+    ASSERT(c == 0x7b97);
+    ASSERT(str_get_char(&s, 30, &c) == -1);
 TEST_ENDDEF
 
 TEST_DEF(test_code_point_to_utf8)

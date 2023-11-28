@@ -19,6 +19,10 @@ TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(TEST_SOURCE))
 
 all: compile test
 
+.PHONY: compile_commands.json
+compile_commands.json:
+	bear -- make
+
 compile: $(ENTRYPOINT_OBJ) $(OBJS)
 	$(CC) -o $(OUT) $^ $(LFLAGS)
 
@@ -37,5 +41,4 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
 
 clean:
 	rm -f $(OBJS) $(OUT) $(ENTRYPOINT_OBJ) $(TEST_OBJS) test_$(OUT)
-	rmdir $(BUILD_DIR)
-
+	rmdir $(BUILD_DIR) 2>/dev/null || true

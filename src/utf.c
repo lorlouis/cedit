@@ -28,9 +28,9 @@ int utf8_byte_count(utf8 c) {
     if((c & 0b11111000) == 0b11110000) return 4;
     if((c & 0b11110000) == 0b11100000) return 3;
     if((c & 0b11100000) == 0b11000000) return 2;
-    if((c & 0b11000000) == 0b10000000) return 1;
-    if((c & 0b11000000) == 0b00000000) return 1;
-    return -1;
+    // this would be a follow byte, ie invalid
+    if((c & 0b11000000) == 0b10000000) return -1;
+    return 1;
 }
 
 int utf32_len_utf8(utf32 c) {
@@ -48,13 +48,7 @@ int utf32_len_utf8(utf32 c) {
     }
 }
 
-int utf16_len_utf8(utf16 *s, size_t len) {
-    TODO(implement this);
-}
-
-int utf16_to_utf32(utf16 *s, size_t len, utf32 *out);
-
-int utf8_to_utf32(utf8 *s, size_t len, utf32 *out) {
+int utf8_to_utf32(const utf8 *s, size_t len, utf32 *out) {
     if(!s || !len) return 0;
 
     int byte_count = utf8_byte_count(*s);
@@ -115,9 +109,7 @@ int utf32_to_utf8(utf32 c, utf8 *buff, size_t size) {
     return byte_count;
 }
 
-int utf16_to_utf8(utf16 *s, size_t len, utf8 *buff, size_t size);
-
-int utf8_to_utf32(utf8 *s, size_t len, utf32 *out);
+int utf8_to_utf32(const utf8 *s, size_t len, utf32 *out);
 
 wint_t utf32_to_wint(utf32 c) {
     static_assert(sizeof(wchar_t) == 2 || sizeof(wchar_t) == 4, "Unsupported wchar_t size");

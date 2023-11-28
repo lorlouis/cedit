@@ -6,6 +6,8 @@
 #include "str.h"
 #include "utf.h"
 
+const char *EMPTY_STR = "";
+
 static void vec_grow_to_fit(Vec *v, size_t count) {
     if(v->cap < v->len + count) {
         size_t new_cap = v->cap ? v->cap * 2 : 2;
@@ -17,7 +19,7 @@ static void vec_grow_to_fit(Vec *v, size_t count) {
     }
 }
 
-void vec_extend(Vec *v, void *data, size_t count) {
+void vec_extend(Vec *v, const void *data, size_t count) {
     assert(v->type_size && "uninitialised vector");
     vec_grow_to_fit(v, count + v->len);
     if(data >= v->buf && data <= v->buf + v->len * v->type_size) {
@@ -72,6 +74,7 @@ void* vec_get(Vec *v, size_t idx) {
 Str str_new(void) {
     Str s = {0};
     s.v.type_size = sizeof(char);
+    s.char_pos.type_size = sizeof(size_t);
     return s;
 }
 
@@ -79,27 +82,33 @@ Vec* str_as_vec(Str *s) {
     return &s->v;
 }
 
-void str_push(Str *s, char *o, size_t len) {
+int str_push(Str *s, char const *o, size_t len) {
     s->v.type_size = sizeof(char);
-    vec_extend(&s->v, o, len + 1);
+    size_t original_len = s->v.len;
+    vec_extend(&s->v, o, len);
+    // append the null terminator
+    ((char*)s->v.buf)[s->v.len] = '\0';
 
-    _Bool contains_utf8 = s->char_pos.len != 0;
-    if(!contains_utf8) {
-        for(size_t i = 0; i < len; i++) {
-            if((o[i] & 0b11000000) == 0b10000000) {
-                contains_utf8 = 1;
-                break;
-            }
+    _Bool ascii_only = s->char_pos.len == 0;
+    for(size_t i = 0; i < len; i++) {
+        if((o[i] & 0b11000000) >= 0b10000000) {
+            ascii_only = 0;
+            break;
         }
     }
-    if(contains_utf8) {
+    if(!ascii_only) {
+        size_t i = 0;
         if(s->char_pos.len) {
-            for(size_t i = 0; i < len; i++) {
-            }
+            i = original_len;
+        }
+        while(i < str_size(s)) {
+            int byte_count = utf8_byte_count(str_as_cstr(s)[i]);
+            if(byte_count < 1) return -1;
+            vec_push(&s->char_pos, &i);
+            i += byte_count;
         }
     }
-
-    return;
+    return 0;
 }
 
 void str_clear(Str *s) {
@@ -130,7 +139,7 @@ size_t str_len(Str *s) {
 
 size_t str_get_char_byte_idx(Str *s, size_t idx) {
     if(s->char_pos.buf) {
-        size_t *new_idx = VEC_GET(size_t, &s->v, idx);
+        size_t *new_idx = VEC_GET(size_t, &s->char_pos, idx);
         if(new_idx) return *new_idx;
         return -1;
     } else if (idx <= s->v.len) return idx;
@@ -140,10 +149,11 @@ size_t str_get_char_byte_idx(Str *s, size_t idx) {
 int str_get_char(Str *s, size_t idx, utf32 *out) {
     size_t index = str_get_char_byte_idx(s, idx);
     if(index == (size_t)-1) return -1;
-    if(utf8_to_utf32(str_as_cstr(s), s->v.len, out) < 0) return -1;
+    if(utf8_to_utf32(str_as_cstr(s) + index, s->v.len - index, out) < 0) return -1;
     return 0;
 }
 
-char* str_as_cstr(Str *s) {
+const char* str_as_cstr(Str *s) {
+    if(!s->v.buf) return EMPTY_STR;
     return (char*)s->v.buf;
 }

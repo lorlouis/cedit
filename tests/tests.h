@@ -7,6 +7,9 @@
 #define XSTRINGIFY(s) #s
 
 #define TESTS_START \
+void failed_assert(void) { \
+    return; \
+} \
 int main() { \
     int test_count = 0; \
     int failed_tests_count = 0; \
@@ -23,6 +26,7 @@ int main() { \
         if(!status && !(condition)) { \
             status = 1; \
             printf("\n\t%s:%d: `%s` is false", __FILE__, __LINE__, STRINGIFY(condition)); \
+            failed_assert(); \
         }
 
 #define TEST_ENDDEF \
