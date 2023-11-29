@@ -2,15 +2,28 @@
 #define TESTS_H 1
 
 #include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
 
 #define STRINGIFY(s) XSTRINGIFY(s)
 #define XSTRINGIFY(s) #s
 
 #define TESTS_START \
-void failed_assert(void) { \
-    return; \
-} \
-int main() { \
+_Bool generate_trap = 0; \
+int main(int argc, char **argv) { \
+    { \
+        int test_c = 0; \
+        while((test_c = getopt(argc, argv, "t")) != -1) { \
+            switch(test_c) { \
+                case 't': \
+                    generate_trap = 1; \
+                    break; \
+                default: \
+                    fprintf(stderr, "unknown argument -%c\n", test_c); \
+                    return 1; \
+            } \
+        } \
+    } \
     int test_count = 0; \
     int failed_tests_count = 0; \
     int status = 0;
@@ -26,7 +39,7 @@ int main() { \
         if(!status && !(condition)) { \
             status = 1; \
             printf("\n\t%s:%d: `%s` is false", __FILE__, __LINE__, STRINGIFY(condition)); \
-            failed_assert(); \
+            if(generate_trap) raise(SIGTRAP); \
         }
 
 #define TEST_ENDDEF \
