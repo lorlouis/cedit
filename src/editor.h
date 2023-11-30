@@ -99,7 +99,7 @@ struct ViewCursor {
 };
 
 struct ViewOpt {
-    int no_line_num:1;
+    int no_line_num;
 };
 
 struct View {

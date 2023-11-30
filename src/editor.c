@@ -20,10 +20,15 @@ struct AbsoluteCursor {
     uint16_t row;
 };
 
-struct {
-    Str msg;
-    size_t cursor_position;
-} MESSAGE_LINE = {0};
+// defaults to a scratch
+static struct Buffer MESSAGE_BUFFER = {0};
+
+struct View MESSAGE = {
+    .buff = &MESSAGE_BUFFER,
+    .options = {
+        .no_line_num = 0,
+    }
+};
 
 FILE* filemode_open(
         enum FileMode fm,
@@ -154,19 +159,23 @@ int buffer_init_from_path(
 }
 
 void buffer_cleanup(struct Buffer *buff) {
-
-    for(size_t i = 0; i < buff->lines_len; i++) {
-        free(buff->lines[i].buf);
+    if(buff->lines) {
+        for(size_t i = 0; i < buff->lines_len; i++) {
+            if(buff->lines[i].buf) free(buff->lines[i].buf);
+        }
+        free(buff->lines);
     }
-    free(buff->lines);
 
     switch(buff->in.ty) {
         case INPUTTY_SCRATCH:
             break;
         case INPUTTY_FILE:
             free(buff->in.u.file.path);
+            buff->in.u.file.path = 0;
             break;
     }
+    memset(buff, 0, sizeof(struct Buffer));
+    return;
 }
 
 int write_escaped(int fd, const char *restrict line, size_t len) {
@@ -229,6 +238,12 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
 
     size_t line_idx = v->view_cursor.off_y;
 
+    if(!v->buff->lines) {
+        v->buff->lines = calloc(1, sizeof(struct Line));
+        v->buff->lines_cap = 1;
+        v->buff->lines_len = 1;
+    }
+
     struct Line *line = v->buff->lines + line_idx;
     char *end_of_line = 0;
     size_t end_of_line_size = 0;
@@ -239,7 +254,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         size_t size = off - start;
         size_t cursor = v->view_cursor.off_x;
         if(size + cursor >= line->cap) {
-            size_t new_cap = line->cap * 2;
+            size_t new_cap = line->cap ? line->cap * 2 : 2;
             while(new_cap < size + line->len) {
                 new_cap = new_cap * 2;
             }
@@ -353,13 +368,13 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
     uint16_t cursor_line_off = 0;
     size_t i = 0;
     for(;
-            i + v->line_off < v->buff->lines_len && i + line_off <= real_height;
+            i + v->line_off < v->buff->lines_len && i + line_off < real_height;
             i++) {
         struct Line l = v->buff->lines[i+v->line_off];
 
         size_t char_off = 0;
         size_t extra_render_line_count = 0;
-        while(i + line_off + extra_render_line_count <= real_height) {
+        while(i + line_off + extra_render_line_count < real_height) {
             ssize_t len = 0;
             size_t take_width = real_width - num_width;
 
@@ -406,7 +421,7 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
 
     }
 
-    for(int j = i + line_off; j <= real_height; j++) {
+    for(int j = i + line_off; j < real_height; j++) {
         set_cursor_pos(real_vp->off_x, real_vp->off_y+j);
         if (num_width) {
             dprintf(
@@ -439,7 +454,7 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             }
         }
 
-        if(row > real_vp->height) {
+        if(row >= real_vp->height) {
             uint16_t diff = row - real_vp->height;
             uint16_t line_off = 0;
             uint16_t render_lines = 0;
@@ -584,8 +599,7 @@ int tabs_prev(void) {
 }
 
 int tabs_next(void) {
-    if(ACTIVE_TAB >= TABS_LEN) return ACTIVE_TAB;
-    ACTIVE_TAB += 1;
+    if(ACTIVE_TAB < TABS_LEN-1) ACTIVE_TAB += 1;
     return ACTIVE_TAB;
 }
 
@@ -673,7 +687,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     }
     struct ViewPort vp = {
         // some space to put the status line
-        .height = ws->ws_row - 4,
+        .height = ws->ws_row - 3,
         .width = ws->ws_col,
         // screen coordinate start at 1
         .off_x = 0,
@@ -854,15 +868,16 @@ int window_handle_key(struct KeyEvent *e) {
 }
 
 int command_enter(void) {
-    str_clear(&MESSAGE_LINE.msg);
-    str_push(&MESSAGE_LINE.msg, ":", 1);
-    MESSAGE_LINE.cursor_position = 1;
+    buffer_cleanup(&MESSAGE_BUFFER);
+    MESSAGE.line_off = 0;
+    MESSAGE.view_cursor.off_x = 0;
+    MESSAGE.view_cursor.off_y = 0;
+    view_write(&MESSAGE, "this", 4);
     return 0;
 }
 
 int command_leave(void) {
-    str_clear(&MESSAGE_LINE.msg);
-    MESSAGE_LINE.cursor_position = 0;
+    buffer_cleanup(&MESSAGE_BUFFER);
     return 0;
 }
 
@@ -877,11 +892,14 @@ int command_handle_key(struct KeyEvent *e) {
     }
     switch(e->key) {
         case '\e': {
+            mode_change(M_Normal);
         } break;
-        default:
-            str_push(&MESSAGE_LINE.msg, (char*)&e->key, 1);
-            MESSAGE_LINE.cursor_position += 1;
-            break;
+        default: {
+            char bytes[4] = {0};
+            int len = utf32_to_utf8(e->key, bytes, 4);
+            assert(len >= 1);
+            view_write(&MESSAGE, bytes, len);
+        } break;
     }
     return 0;
 }
@@ -957,16 +975,14 @@ int active_line_render(struct winsize *ws) {
 }
 
 int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
-    set_cursor_pos(0, ws->ws_row -1);
-    if(MESSAGE_LINE.msg.v.len) {
-        int len = MESSAGE_LINE.msg.v.len;
-        dprintf(STDOUT_FILENO, "%.*s", len, (char*)MESSAGE_LINE.msg.v.buf);
-    }
+    struct ViewPort vp = {
+        .width = ws->ws_col-1,
+        .height = 1,
+        .off_x = 0,
+        .off_y = ws->ws_row-1,
+    };
 
-    if(MESSAGE_LINE.cursor_position) {
-        ac->row = ws->ws_row -1;
-        ac->col = MESSAGE_LINE.cursor_position;
-    }
+    view_render(&MESSAGE, &vp, ws, ac);
     return 0;
 }
 
@@ -979,7 +995,12 @@ int editor_render(struct winsize *ws) {
     write(STDOUT_FILENO, CLS, sizeof(CLS));
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
-    if(message_line_render(ws, &ac)) return -1;
+
+    if(MESSAGE_BUFFER.lines) {
+        if(message_line_render(ws, &ac)) return -1;
+    } else {
+        if(message_line_render(ws, 0)) return -1;
+    }
     set_cursor_pos(ac.col, ac.row);
     return 0;
 }
