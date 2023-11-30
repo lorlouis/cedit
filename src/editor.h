@@ -16,6 +16,10 @@ struct AbsoluteCursor;
 
 extern struct winsize WS;
 
+extern int RUNNING;
+
+extern struct View MESSAGE;
+
 enum FileMode {
     FM_RW,
     FM_RO,
@@ -172,6 +176,8 @@ int view_render(
         struct AbsoluteCursor *ac);
 
 void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y);
+
+int view_write(struct View *v, const char *restrict s, size_t len);
 
 int tabs_prev(void);
 

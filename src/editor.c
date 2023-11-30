@@ -2,6 +2,7 @@
 #include "vt.h"
 #include "xalloc.h"
 #include "str.h"
+#include "commands.h"
 
 #include <string.h>
 #include <assert.h>
@@ -14,6 +15,8 @@
 #define TAB_WIDTH 4
 
 struct winsize WS = {0};
+
+int RUNNING = 1;
 
 struct AbsoluteCursor {
     uint16_t col;
@@ -753,48 +756,52 @@ int normal_handle_key(struct KeyEvent *e) {
     return 0;
 }
 
+int view_erase(struct View *v) {
+    size_t cursor = v->view_cursor.off_x;
+    struct Line *line = v->buff->lines + v->view_cursor.off_y;
+    if(cursor > 0) {
+        memmove(line->buf + cursor -1, line->buf + cursor, line->len - 1);
+        line->len -= 1;
+        v->view_cursor.off_x -= 1;
+    } else if(v->view_cursor.off_y > 0) {
+        size_t cursor_line = v->view_cursor.off_y;
+        struct Line *prev_line = v->buff->lines + v->view_cursor.off_y -1;
+        // move cursor to end of previous line
+        v->view_cursor.off_x = prev_line->len;
+        if(line->len > 0) {
+            // cursor must be 0
+            if(prev_line->cap < line->len + prev_line->len) {
+                size_t new_size = prev_line->cap * 2;
+                while(new_size < line->len + prev_line->len) {
+                    new_size *= 2;
+                }
+                prev_line->buf = xrealloc(prev_line->buf, new_size);
+                prev_line->cap = new_size;
+            }
+
+            // copy null terminator
+            memcpy(prev_line->buf + prev_line->len, line->buf, line->len+1);
+            prev_line->len += line->len;
+        }
+        if(cursor_line+1 <= v->buff->lines_len) {
+            free(line->buf);
+            memmove(v->buff->lines + cursor_line,
+                    v->buff->lines + cursor_line+1,
+                    (v->buff->lines_len - cursor_line) * sizeof(struct Line));
+        }
+        v->buff->lines_len -= 1;
+        v->view_cursor.off_y -= 1;
+    }
+    return 0;
+}
+
 int insert_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(TABS + ACTIVE_TAB);
     if(e->key == '\e') {
         mode_change(M_Normal);
         return 0;
     } else if(e->key == KC_BACKSPACE) {
-        size_t cursor = v->view_cursor.off_x;
-        struct Line *line = v->buff->lines + v->view_cursor.off_y;
-        if(cursor > 0) {
-            memmove(line->buf + cursor -1, line->buf + cursor, line->len - 1);
-            line->len -= 1;
-            v->view_cursor.off_x -= 1;
-        } else if(v->view_cursor.off_y > 0) {
-            size_t cursor_line = v->view_cursor.off_y;
-            struct Line *prev_line = v->buff->lines + v->view_cursor.off_y -1;
-            // move cursor to end of previous line
-            v->view_cursor.off_x = prev_line->len;
-            if(line->len > 0) {
-                // cursor must be 0
-                if(prev_line->cap < line->len + prev_line->len) {
-                    size_t new_size = prev_line->cap * 2;
-                    while(new_size < line->len + prev_line->len) {
-                        new_size *= 2;
-                    }
-                    prev_line->buf = xrealloc(prev_line->buf, new_size);
-                    prev_line->cap = new_size;
-                }
-
-                // copy null terminator
-                memcpy(prev_line->buf + prev_line->len, line->buf, line->len+1);
-                prev_line->len += line->len;
-            }
-            if(cursor_line+1 <= v->buff->lines_len) {
-                free(line->buf);
-                memmove(v->buff->lines + cursor_line,
-                        v->buff->lines + cursor_line+1,
-                        (v->buff->lines_len - cursor_line) * sizeof(struct Line));
-            }
-            v->buff->lines_len -= 1;
-            v->view_cursor.off_y -= 1;
-        }
-
+        view_erase(v);
         return 0;
     } else {
         char buff[4] = {0};
@@ -872,7 +879,7 @@ int command_enter(void) {
     MESSAGE.line_off = 0;
     MESSAGE.view_cursor.off_x = 0;
     MESSAGE.view_cursor.off_y = 0;
-    view_write(&MESSAGE, "this", 4);
+    view_write(&MESSAGE, ":", 1);
     return 0;
 }
 
@@ -887,13 +894,17 @@ int command_handle_key(struct KeyEvent *e) {
         if(e->key == '\e') {
             mode_change(M_Normal);
             return 0;
+        } else if(e->key == KC_BACKSPACE) {
+            view_erase(&MESSAGE);
+            return 0;
+        } else if(e->key == '\n') {
+            if(MESSAGE_BUFFER.lines) {
+                exec_command(MESSAGE_BUFFER.lines->buf);
+            }
+            return 0;
         }
-
     }
     switch(e->key) {
-        case '\e': {
-            mode_change(M_Normal);
-        } break;
         default: {
             char bytes[4] = {0};
             int len = utf32_to_utf8(e->key, bytes, 4);
@@ -935,7 +946,6 @@ struct ModeInterface mode_current(void) {
     return MODES[MODE];
 }
 
-
 int mode_change(enum Mode mode) {
     int ret = 0;
     if(MODE != mode) {
@@ -955,7 +965,6 @@ int mode_change(enum Mode mode) {
     }
     return 0;
 }
-
 
 int active_line_render(struct winsize *ws) {
     set_cursor_pos(0, ws->ws_row - 2);

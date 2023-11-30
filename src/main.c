@@ -207,7 +207,7 @@ int main(int argc, const char **argv) {
     tabs_push(tab);
 
     editor_render(&WS);
-    while(1) {
+    while(RUNNING) {
         if(handle_keys()) editor_render(&WS);
         usleep(10);
     }
