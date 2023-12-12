@@ -19,16 +19,35 @@ static void vec_grow_to_fit(Vec *v, size_t count) {
     }
 }
 
+int vec_is_empty(Vec *v) {
+    return v->len == 0;
+}
+
 void vec_extend(Vec *v, const void *data, size_t count) {
     assert(v->type_size && "uninitialised vector");
     vec_grow_to_fit(v, count + v->len);
     if(data >= v->buf && data <= v->buf + v->len * v->type_size) {
-        memmove(v->buf+v->len * v->type_size, data, count * v->type_size);
+        memmove(v->buf+ v->len * v->type_size, data, count * v->type_size);
     } else {
-        memcpy(v->buf+v->len * v->type_size, data, count* v->type_size);
+        memcpy(v->buf + v->len * v->type_size, data, count* v->type_size);
     }
     v->len += count;
     return;
+}
+
+// Returns 1 if there was something to pop
+int vec_pop(Vec *v, void *out) {
+    if(v->len == 0){
+        return 0;
+    }
+    void *las_elem = vec_get(v, v->len-1);
+    if(out) {
+        memcpy(out, las_elem, v->type_size);
+    } else if (v->free_fn) {
+        v->free_fn(las_elem);
+    }
+    v->len -= 1;
+    return 1;
 }
 
 void vec_push(Vec *v, void *data) {
@@ -82,30 +101,58 @@ Vec* str_as_vec(Str *s) {
     return &s->v;
 }
 
-int str_push(Str *s, char const *o, size_t len) {
-    s->v.type_size = sizeof(char);
-    size_t original_len = s->v.len;
-    vec_extend(&s->v, o, len);
-    // append the null terminator
-    ((char*)s->v.buf)[s->v.len] = '\0';
+static int build_character_table(Vec *ct, size_t start_off, const char *s, size_t len) {
+    size_t i = start_off;
+    while(i < len) {
+        int byte_count = utf8_byte_count(s[i]);
+        if(byte_count < 1) return -1;
+        size_t entry = i+start_off;
+        vec_push(ct, &entry);
+        i += byte_count;
+    }
+    return 0;
+}
 
-    _Bool ascii_only = s->char_pos.len == 0;
+static int is_ascii(const char *s, size_t len) {
+    int ascii_only = 1;
     for(size_t i = 0; i < len; i++) {
-        if((o[i] & 0b11000000) >= 0b10000000) {
+        if((s[i] & 0b11000000) >= 0b10000000) {
             ascii_only = 0;
             break;
         }
     }
+    return ascii_only;
+}
+
+int str_push(Str *s, char const *o, size_t len) {
+    if(len == 0) return 0;
+    s->v.type_size = sizeof(char);
+    size_t original_len = s->v.len;
+
+    vec_pop(&s->v, NULL);
+    vec_extend(&s->v, o, len);
+
+    if(*VEC_GET(char, &s->v, s->v.len-1) != '\0') {
+        char terminator = '\0';
+        vec_push(&s->v, &terminator);
+    }
+
+    int ascii_only = s->char_pos.len == 0 && is_ascii(o, len);
+
     if(!ascii_only) {
-        size_t i = 0;
+        int start_off = 0;
         if(s->char_pos.len) {
-            i = original_len;
+            start_off = original_len;
         }
-        while(i < str_size(s)) {
-            int byte_count = utf8_byte_count(str_as_cstr(s)[i]);
-            if(byte_count < 1) return -1;
-            vec_push(&s->char_pos, &i);
-            i += byte_count;
+        int ret = build_character_table(
+                &s->char_pos,
+                start_off,
+                str_as_cstr(s),
+                str_cstr_len(s)
+            );
+
+        if(ret) {
+            return ret;
         }
     }
     return 0;
@@ -120,21 +167,63 @@ void str_clear(Str *s) {
     return;
 }
 
+void str_free(Str *s) {
+    str_clear(s);
+    vec_cleanup(&s->v);
+}
+
 void str_trunc(Str *s, size_t new_len) {
     s->v.type_size = sizeof(char);
     if(new_len >= s->v.len) return;
-    s->v.len = new_len;
     ((char*)s->v.buf)[new_len+1] = '\0';
+    s->v.len = new_len+1;
     return;
 }
 
+int str_insert_at(Str *s, size_t idx, const char *o, size_t len) {
+    if(idx == str_len(s)) {
+        return str_push(s, o, len);
+    }
+
+    vec_grow_to_fit(&s->v, str_size(s) + len);
+    size_t byte_idx = str_get_char_byte_idx(s, idx);
+    size_t overlap_size = str_size(s) - byte_idx;
+    // move the overlapping part to the end of the line
+    memmove(s->v.buf + byte_idx + len, s->v.buf + byte_idx, overlap_size);
+    // copy o into the overlap
+    memmove(s->v.buf + byte_idx, o, len);
+    s->v.len += len;
+
+    if(!vec_is_empty(&s->char_pos) || !is_ascii(o, len) ) {
+        // TODO(louis) do the proper thing and do not recompute the whole index table
+        vec_clear(&s->char_pos);
+        int ret = build_character_table(
+                &s->char_pos,
+                0,
+                str_as_cstr(s),
+                str_cstr_len(s)
+            );
+        if(ret) return ret;
+    }
+    return 0;
+}
+
+// Returns the size (in characters) of the string including `NULL` character.
 size_t str_size(Str *s) {
     return s->v.len;
 }
 
+// Returns the size (in characters) of the string excluding `NULL` character.
+size_t str_cstr_len(const Str *s) {
+    if(s->v.len == 0) return 0;
+    return s->v.len -1;
+}
+
+// Returns the number of UTF-8 code points.
 size_t str_len(Str *s) {
     if(s->char_pos.buf) return s->char_pos.len;
-    return s->v.len;
+    if(s->v.len == 0) return 0;
+    return s->v.len -1;
 }
 
 size_t str_get_char_byte_idx(Str *s, size_t idx) {
@@ -153,7 +242,30 @@ int str_get_char(Str *s, size_t idx, utf32 *out) {
     return 0;
 }
 
-const char* str_as_cstr(Str *s) {
-    if(!s->v.buf) return EMPTY_STR;
+const char* str_as_cstr(const Str *s) {
+    if(s->v.len == 0) return EMPTY_STR;
     return (char*)s->v.buf;
+}
+
+// Deep clone, don't forget to free
+Str str_clone(const Str *s) {
+    Str new = str_from_cstr_len(str_as_cstr(s), str_cstr_len(s));
+    return new;
+}
+
+Str str_from_cstr(const char *s) {
+    Str new = str_new();
+    size_t s_len = strlen(s);
+    str_push(&new, s, s_len);
+    return new;
+}
+
+Str str_from_cstr_len(const char *s, size_t len) {
+    Str new = str_new();
+    str_push(&new, s, len);
+    return new;
+}
+
+int str_is_empty(Str *s) {
+    return vec_is_empty(&s->v);
 }

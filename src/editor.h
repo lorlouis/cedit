@@ -1,6 +1,9 @@
-#include "termkey.h"
 #ifndef EDITOR_H
 #define EDITOR_H 1
+
+#include "termkey.h"
+
+#include "str.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -23,14 +26,6 @@ extern struct View MESSAGE;
 enum FileMode {
     FM_RW,
     FM_RO,
-};
-
-struct Line {
-    // does not include the null terminator
-    size_t len;
-    // includes the null terminator
-    size_t cap;
-    char *buf;
 };
 
 struct Input {
@@ -72,7 +67,7 @@ struct Buffer {
     struct Input in;
     size_t lines_len;
     size_t lines_cap;
-    struct Line *lines;
+    Str *lines;
     size_t rc;
 };
 

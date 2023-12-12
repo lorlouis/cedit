@@ -50,6 +50,10 @@ int utf32_len_utf8(utf32 c) {
 
 int utf8_to_utf32(const utf8 *s, size_t len, utf32 *out) {
     if(!s || !len) return 0;
+    if(*s == '\0') {
+        *out = 0;
+        return 0;
+    }
 
     int byte_count = utf8_byte_count(*s);
     if(byte_count < 0 || len < (size_t)byte_count) return -1;

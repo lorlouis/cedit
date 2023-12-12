@@ -38,6 +38,8 @@ typedef struct {
 
 Str str_new(void);
 
+void str_free(Str *s);
+
 Vec* str_as_vec(Str *s);
 
 int str_push(Str *s, const char *o, size_t len);
@@ -47,11 +49,22 @@ void str_clear(Str *s);
 void str_trunc(Str *s, size_t new_len);
 
 size_t str_len(Str *s);
+
+size_t str_cstr_len(const Str *s);
+
+int str_insert_at(Str *s, size_t idx, const char *o, size_t len);
+
 size_t str_size(Str *s);
 
 size_t str_get_char_byte_idx(Str *s, size_t idx);
 
-const char* str_as_cstr(Str *s);
+const char* str_as_cstr(const Str *s);
+
+Str str_from_cstr(const char *s);
+
+Str str_from_cstr_len(const char *s, size_t len);
+
+Str str_clone(const Str *s);
 
 #ifdef UTF_H
     int str_get_char(Str *s, size_t idx, utf32 *out);
