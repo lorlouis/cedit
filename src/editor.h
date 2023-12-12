@@ -36,7 +36,7 @@ struct Input {
     union {
         int scratch:1;
         struct {
-            char *path;
+            Str path;
             enum FileMode fm;
         } file;
     } u;

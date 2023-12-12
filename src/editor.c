@@ -133,7 +133,7 @@ int buffer_init_from_path(
 
     buff->in.ty = INPUTTY_FILE;
     buff->in.u.file.fm = fm;
-    buff->in.u.file.path = path;
+    buff->in.u.file.path = str_from_cstr(path);
 
     buff->lines = lines;
     buff->lines_cap = lines_cap;
@@ -162,8 +162,7 @@ void buffer_cleanup(struct Buffer *buff) {
         case INPUTTY_SCRATCH:
             break;
         case INPUTTY_FILE:
-            free(buff->in.u.file.path);
-            buff->in.u.file.path = 0;
+            str_free(&buff->in.u.file.path);
             break;
     }
     memset(buff, 0, sizeof(struct Buffer));
@@ -298,8 +297,8 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         if(source_line != v->view_cursor.off_y) {
             str_push(line, end_of_line, end_of_line_size);
         }
-        free(end_of_line);
     }
+    free(end_of_line);
     return 0;
 }
 
