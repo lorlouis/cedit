@@ -9,6 +9,7 @@
 const char *EMPTY_STR = "";
 
 static void vec_grow_to_fit(Vec *v, size_t count) {
+    assert(v->cap != SIZE_MAX && "vec is readonly");
     if(v->cap < v->len + count) {
         size_t new_cap = v->cap ? v->cap * 2 : 2;
         while(new_cap < v->len + count) {
@@ -19,11 +20,12 @@ static void vec_grow_to_fit(Vec *v, size_t count) {
     }
 }
 
-int vec_is_empty(Vec *v) {
+int vec_is_empty(const Vec *v) {
     return v->len == 0;
 }
 
 void vec_extend(Vec *v, const void *data, size_t count) {
+    assert(v->cap != SIZE_MAX && "vec is readonly");
     assert(v->type_size && "uninitialised vector");
     vec_grow_to_fit(v, count + v->len);
     if(data >= v->buf && data <= v->buf + v->len * v->type_size) {
@@ -37,6 +39,8 @@ void vec_extend(Vec *v, const void *data, size_t count) {
 
 // Returns 1 if there was something to pop
 int vec_pop(Vec *v, void *out) {
+    assert(v->cap != SIZE_MAX && "vec is readonly");
+
     if(v->len == 0){
         return 0;
     }
@@ -55,7 +59,18 @@ void vec_push(Vec *v, void *data) {
     return;
 }
 
+// Returns a readonly vec representing the elements [idx...]
+Vec vec_tail(const Vec *v, size_t idx) {
+    assert(idx+1 <= v->len && "index out of range");
+    Vec tail = *v;
+    tail.buf += idx * v->type_size;
+    tail.cap = SIZE_MAX;
+    tail.len -= idx;
+    return tail;
+}
+
 int vec_insert(Vec *v, size_t idx, void *data) {
+    assert(v->cap != SIZE_MAX && "vec is readonly");
     if(idx > v->len) return -EINVAL;
     if(idx == v->len) {
         vec_push(v, data);
@@ -68,12 +83,14 @@ int vec_insert(Vec *v, size_t idx, void *data) {
 }
 
 void vec_cleanup(Vec *v) {
+    if(v->cap == SIZE_MAX) return;
     vec_clear(v);
     if(v->buf) xfree(v->buf);
     return;
 }
 
 void vec_clear(Vec *v) {
+    assert(v->cap != SIZE_MAX && "vec is readonly");
     if(v->free_fn) {
         for(size_t i = 0; i < v->len; i++) {
             v->free_fn(v->buf + i * v->type_size);
@@ -84,9 +101,9 @@ void vec_clear(Vec *v) {
     return;
 }
 
-void* vec_get(Vec *v, size_t idx) {
+void* vec_get(const Vec *v, size_t idx) {
     assert(v->type_size && "uninitialised vector");
-    if(idx > v->len) return 0;
+    assert(idx < v->len && "index out of range");
     return v->buf + idx * v->type_size;
 }
 
@@ -103,11 +120,12 @@ Vec* str_as_vec(Str *s) {
 
 static int build_character_table(Vec *ct, size_t start_off, const char *s, size_t len) {
     size_t i = start_off;
-    while(i < len) {
+    while(i <= len) {
         int byte_count = utf8_byte_count(s[i]);
         if(byte_count < 1) return -1;
         size_t entry = i+start_off;
         vec_push(ct, &entry);
+        if(s[i] == '\0') break;
         i += byte_count;
     }
     return 0;
@@ -168,6 +186,7 @@ void str_clear(Str *s) {
 }
 
 void str_free(Str *s) {
+    if(s->v.cap == SIZE_MAX) return;
     str_clear(s);
     vec_cleanup(&s->v);
 }
@@ -189,7 +208,7 @@ int str_insert_at(Str *s, size_t idx, const char *o, size_t len) {
     size_t byte_idx = str_get_char_byte_idx(s, idx);
     size_t overlap_size = str_size(s) - byte_idx;
     // move the overlapping part to the end of the line
-    memmove(s->v.buf + byte_idx + len, s->v.buf + byte_idx, overlap_size);
+    memmove(s->v.buf + byte_idx + len, s->v.buf + byte_idx, str_size(s) - byte_idx);
     // copy o into the overlap
     memmove(s->v.buf + byte_idx, o, len);
     s->v.len += len;
@@ -220,13 +239,13 @@ size_t str_cstr_len(const Str *s) {
 }
 
 // Returns the number of UTF-8 code points.
-size_t str_len(Str *s) {
-    if(s->char_pos.buf) return s->char_pos.len;
+size_t str_len(const Str *s) {
+    if(s->char_pos.buf) return s->char_pos.len-1;
     if(s->v.len == 0) return 0;
     return s->v.len -1;
 }
 
-size_t str_get_char_byte_idx(Str *s, size_t idx) {
+size_t str_get_char_byte_idx(const Str *s, size_t idx) {
     if(s->char_pos.buf) {
         size_t *new_idx = VEC_GET(size_t, &s->char_pos, idx);
         if(new_idx) return *new_idx;
@@ -235,7 +254,7 @@ size_t str_get_char_byte_idx(Str *s, size_t idx) {
     return -1;
 }
 
-int str_get_char(Str *s, size_t idx, utf32 *out) {
+int str_get_char(const Str *s, size_t idx, utf32 *out) {
     size_t index = str_get_char_byte_idx(s, idx);
     if(index == (size_t)-1) return -1;
     if(utf8_to_utf32(str_as_cstr(s) + index, s->v.len - index, out) < 0) return -1;
@@ -258,6 +277,44 @@ Str str_from_cstr(const char *s) {
     size_t s_len = strlen(s);
     str_push(&new, s, s_len);
     return new;
+}
+
+// Equivalent to idx + <char*> on a cstr
+const char* str_tail_cstr(const Str *s, size_t idx) {
+    return str_as_cstr(s) + str_get_char_byte_idx(s, idx);
+}
+
+// Returns a readonly Str containing the chars after char idx
+Str str_tail(const Str *s, size_t idx) {
+    size_t byte_off = str_get_char_byte_idx(s, idx);
+    Vec v = vec_tail(&s->v, byte_off);
+    Vec char_pos = {0};
+    if(!vec_is_empty(&s->char_pos)) {
+        char_pos = vec_tail(&s->char_pos, idx);
+    }
+    return (Str) {
+        .v = v,
+        .char_pos = char_pos,
+    };
+}
+
+Str str_head(const Str *s, size_t idx) {
+
+    size_t byte_off = str_get_char_byte_idx(s, idx);
+    Vec v = s->v;
+    v.len = byte_off;
+    v.cap = SIZE_MAX;
+
+    Vec char_pos = s->char_pos;
+    if(!vec_is_empty(&s->char_pos)) {
+        char_pos.len = idx;
+        char_pos.cap = SIZE_MAX;
+    }
+    return (Str) {
+        .v = v,
+        .char_pos = char_pos,
+    };
+
 }
 
 Str str_from_cstr_len(const char *s, size_t len) {

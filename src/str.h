@@ -25,7 +25,7 @@ void vec_cleanup(Vec *v);
 
 void vec_clear(Vec *v);
 
-void* vec_get(Vec *v, size_t idx);
+void* vec_get(const Vec *v, size_t idx);
 
 int vec_insert(Vec *v, size_t idx, void *data);
 
@@ -48,7 +48,7 @@ void str_clear(Str *s);
 
 void str_trunc(Str *s, size_t new_len);
 
-size_t str_len(Str *s);
+size_t str_len(const Str *s);
 
 size_t str_cstr_len(const Str *s);
 
@@ -56,7 +56,7 @@ int str_insert_at(Str *s, size_t idx, const char *o, size_t len);
 
 size_t str_size(Str *s);
 
-size_t str_get_char_byte_idx(Str *s, size_t idx);
+size_t str_get_char_byte_idx(const Str *s, size_t idx);
 
 const char* str_as_cstr(const Str *s);
 
@@ -66,8 +66,18 @@ Str str_from_cstr_len(const char *s, size_t len);
 
 Str str_clone(const Str *s);
 
+// Equivalent to idx + <char*> on a cstr
+const char* str_tail_cstr(const Str *s, size_t idx);
+
+// Returns a readonly Str containing the chars after char idx
+Str str_tail(const Str *s, size_t idx);
+
+Str str_head(const Str *s, size_t idx);
+
+int str_is_empty(Str *s);
+
 #ifdef UTF_H
-    int str_get_char(Str *s, size_t idx, utf32 *out);
+    int str_get_char(const Str *s, size_t idx, utf32 *out);
 #endif
 
 #endif

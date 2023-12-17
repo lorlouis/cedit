@@ -38,54 +38,46 @@ void alternate_buf_leave(void) {
     return;
 }
 
-size_t count_cols(const char *restrict line, size_t line_len, int tab_width) {
+size_t count_cols(const Str *line, int tab_width) {
     size_t sum = 0;
     size_t off = 0;
-    while(off<line_len && *(line+off) && *(line+off) != '\n') {
-        wchar_t c;
-        int read = mbtowc(&c, line + off, line_len);
-        // could be wide null (unlikely but still)
-        if(!read) break;
-        if(read == -1) {
+    while(off<str_len(line)) {
+        utf32 c = 0;
+        if(str_get_char(line, off, &c)) return -1;
+
+        if(c == 0 || c == L'\n') break;
+
+        int utf8_len = utf32_len_utf8(c);
+        if(utf8_len == -1) {
             return -1;
         }
 
-        int width = wcwidth(c);
+        int width = utf32_width(c);
         // -1 on non printable characters
         if(width <= 0) {
-            off += read;
+            off += 1;
             if(c == L'\t') sum += tab_width;
             continue;
         }
 
         sum += width;
-        off += read;
+        off += 1;
     }
     return sum;
 }
 
-ssize_t take_cols(const char *restrict line, size_t line_len, size_t *nb_cols, int tab_width) {
+ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width) {
     size_t sum = 0;
     size_t off = 0;
 
-    while(off<line_len && *(line+off) && *(line+off) != '\n') {
-        wchar_t c;
-        int read = mbtowc(&c, line + off, line_len);
-        if(read == -1) {
-            return -1;
-        }
+    while(off<str_len(line)){
+        utf32 c = 0;
+        if(str_get_char(line, off, &c)) return -1;
 
-        // could be wide null (unlikely but still)
-        if(!read) break;
+        wint_t wc = utf32_to_wint(c);
+        if(wc == 0 || wc == L'\n') break;
 
-        int width = wcwidth(c);
-
-        // -1 on non printable characters
-        if(width <= 0) {
-            off += read;
-            if(c == L'\t') sum += tab_width;
-            continue;
-        }
+        int width = utf32_width(c);
 
         if(sum + width > *nb_cols) {
             *nb_cols = sum;
@@ -93,7 +85,7 @@ ssize_t take_cols(const char *restrict line, size_t line_len, size_t *nb_cols, i
         }
 
         sum += width;
-        off += read;
+        off += 1;
     }
 
     *nb_cols = sum;

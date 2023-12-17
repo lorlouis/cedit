@@ -11,6 +11,8 @@ typedef char utf8;
 // needs to be called at startup
 int load_locale(void);
 
+int utf8_is_follow(utf8 c);
+
 int utf8_byte_count(utf8 c);
 
 int utf32_len_utf8(utf32 c);
@@ -25,5 +27,6 @@ wint_t utf32_to_wint(utf32 c);
 
 utf32 wint_to_utf32(wint_t c);
 
-#endif
+int utf32_width(utf32 c);
 
+#endif

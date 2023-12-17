@@ -199,10 +199,10 @@ int main(int argc, const char **argv) {
     };
 
     tabs_push(tab);
-    tab.name = "theelo";
+    tab.name = str_from_cstr("theelo");
     tabs_push(tab);
     tabs_push(tab);
-    tab.name = NULL;
+    tab.name = str_new();
     tabs_push(tab);
     tabs_push(tab);
 

@@ -24,6 +24,10 @@ int load_locale(void) {
     return 0;
 }
 
+int utf8_is_follow(utf8 c) {
+    return (c & 0b11000000) == 0b10000000;
+}
+
 int utf8_byte_count(utf8 c) {
     if((c & 0b11111000) == 0b11110000) return 4;
     if((c & 0b11110000) == 0b11100000) return 3;
@@ -130,6 +134,20 @@ wint_t utf32_to_wint(utf32 c) {
     if(mbtowc(&out, buff, sizeof(buff)) < 0) return -1;
 
     return out;
+}
+
+int utf32_width(utf32 c) {
+    wint_t wc = utf32_to_wint(c);
+    int width = wcwidth(wc);
+    if(width == -1) {
+        switch(wc) {
+            case L'\t':
+                return 4;
+            default:
+                assert(0 && "unknown variant");
+        }
+    }
+    return width;
 }
 
 utf32 wint_to_utf32(wint_t c);

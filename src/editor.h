@@ -132,7 +132,7 @@ struct Window {
 struct Tab {
     struct Window *w;
     size_t active_window;
-    char *name;
+    Str name;
 };
 
 // Returns:

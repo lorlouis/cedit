@@ -44,7 +44,7 @@ static int read_utf8(int fd, char (*out)[4], int count) {
         // missing a byte
         if(ret == 0) return -2;
         // the next byte is invalid
-        if(count != utf8_byte_count(c)+1) return -2;
+        if(!utf8_is_follow(c)) return -2;
         (*out)[i] = c;
         i+= 1;
     }
@@ -64,7 +64,7 @@ int readkey(int fd, struct KeyEvent *restrict e) {
     int utf8_len = utf8_byte_count(c);
     if(utf8_len > 1) {
         char s[4] = {c, 0, 0 , 0};
-        if(-1 == read_utf8(fd, &s, utf8_len)) return -1;
+        if(read_utf8(fd, &s, utf8_len) < 0) return -1;
         if(-1 == utf8_to_utf32(s, sizeof(s), &e->key)) return -1;
         e->modifier = 0;
         return 1;

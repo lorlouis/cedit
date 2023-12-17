@@ -13,9 +13,10 @@ TESTS_START
 load_locale();
 
 TEST_DEF(test_take_cols)
-    char line[] = "this is a test";
+    Str line = str_from_cstr("this is a test");
     size_t nb_cols = 4;
-    ssize_t ret = take_cols(line, sizeof(line), &nb_cols, 4);
+    ssize_t ret = take_cols(&line, &nb_cols, 4);
+    str_free(&line);
     ASSERT(ret == 4);
 TEST_ENDDEF
 
@@ -119,6 +120,12 @@ TEST_DEF(test_code_point_to_utf8)
     char s[4] = {0};
     ASSERT(utf32_to_utf8(code, s, 4) == 3);
     ASSERT(!strcmp(s, "€"));
+}
+{
+    utf32 code = 0xe9;
+    char s[4] = {0};
+    ASSERT(utf32_to_utf8(code, s, 4) == 2);
+    ASSERT(!strcmp(s, "é"));
 }
 {
     utf32 code = 0x10348;

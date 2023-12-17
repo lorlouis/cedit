@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <sys/types.h>
 
+#include "utf.h"
+#include "str.h"
+
 #define ESC "\e"
 #define CSI ESC "["
 #define ST  ESC "\\"
@@ -39,8 +42,8 @@ void alternate_buf_enter(void);
 //   -1 on error
 void alternate_buf_leave(void);
 
-size_t count_cols(const char *restrict line, size_t line_len, int tab_width);
+size_t count_cols(const Str *restrict line, int tab_width);
 
-ssize_t take_cols(const char *restrict line, size_t line_len, size_t *nb_cols, int tab_width);
+ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width);
 
 #endif
