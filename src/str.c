@@ -118,9 +118,9 @@ Vec* str_as_vec(Str *s) {
     return &s->v;
 }
 
-static int build_character_table(Vec *ct, size_t start_off, const char *s, size_t len) {
+static int build_character_table(Vec *ct, size_t start_off, const char *s, size_t size) {
     size_t i = start_off;
-    while(i <= len) {
+    while(i <= size) {
         int byte_count = utf8_byte_count(s[i]);
         if(byte_count < 1) return -1;
         size_t entry = i+start_off;
@@ -220,7 +220,7 @@ int str_insert_at(Str *s, size_t idx, const char *o, size_t len) {
                 &s->char_pos,
                 0,
                 str_as_cstr(s),
-                str_cstr_len(s)
+                str_size(s)
             );
         if(ret) return ret;
     }

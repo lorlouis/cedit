@@ -265,7 +265,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         size_t original_len = str_len(line);
 
         // copy the new block on top of the old stuff
-        str_insert_at(line, cursor, s + start, size);
+        str_insert_at(line, v->view_cursor.off_x, s + start, size);
 
         size_t new_len = str_len(line);
 
@@ -434,9 +434,9 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             while(diff >= 0) {
                 size_t take_width = real_vp->width - num_width;
                 Str tail = str_tail(line, len);
-                Str tail_tail = str_tail(&tail, v->view_cursor.off_x - len);
+                Str tail_head = str_head(&tail, v->view_cursor.off_x - len + 1);
                 //size_t new_len = take_cols(str_as_cstr(line) + len, v->view_cursor.off_x - len, &take_width, 4);
-                size_t new_len = take_cols(&tail_tail, &take_width, 4);
+                size_t new_len = take_cols(&tail_head, &take_width, 4);
                 row += 1;
                 col -= take_width;
                 diff -= take_width;
