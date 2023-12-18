@@ -500,12 +500,11 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
         switch(w->split_dir) {
             case SD_Vertical: {
                 // Look mah! No npm
-                int is_odd = (self_vp.width-1) % 2;
-                int is_even = !is_odd;
-                self_vp.width = (self_vp.width-1) / 2;
+                is_odd = (self_vp.width-1) % 2;
+                self_vp.height = (self_vp.width-1) / 2;
                 sub_vp = self_vp;
-                sub_vp.off_x += self_vp.width+is_odd;
-                self_vp.width -= is_even;
+                self_vp.width += is_odd;
+                sub_vp.off_x += self_vp.width+1;
 
                 // render split line
                 for(int i = 0; i < self_vp.height; i++) {
