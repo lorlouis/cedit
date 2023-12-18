@@ -169,30 +169,47 @@ void buffer_cleanup(struct Buffer *buff) {
     return;
 }
 
-int write_escaped(int fd, const Str *line, size_t len) {
+int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
     size_t off = 0;
     int count = 0;
+    Style substitution = style_new();
+    if(base_style) {
+        substitution = style_fg(*base_style, colour_vt(VT_GRA));
+    }
+    style_begin(base_style, fd);
     while(off < len) {
         utf32 c = 0;
         assert(str_get_char(line, off, &c) != -1);
 
         wint_t wc = utf32_to_wint(c);
         if(wc == L'\n' || wc == 0) break;
-        if(wc == (wint_t)-1) return -1;
+        if(wc == (wint_t)-1) {
+            style_reset(fd);
+            return -1;
+        }
 
         // could be wide null (unlikely but still)
         assert(wc && "null in middle of the line");
 
         if(wc == L'\t') {
-            char tab_vis[] = CSI"90m" ">---" CSI"39;49m";
-            if(write(fd, tab_vis, sizeof(tab_vis)) == -1) return -1;
+            Style style = {0};
+            style = style_fg(style, colour_vt(VT_GRA));
+
+            // exit current style
+            style_reset(fd);
+
+            style_fmt(&substitution, fd, "%s", ">---");
+            // go back to previous style
+            style_begin(base_style, fd);
+
             count += TAB_WIDTH;
         } else if (iswprint(wc)) {
-            if(write(fd, str_tail_cstr(line, off), utf32_len_utf8(c)) == -1) return -1;
+            write(fd, str_tail_cstr(line, off), utf32_len_utf8(c));
             count += utf32_len_utf8(c);
         }
         off += 1;
     }
+    style_reset(fd);
     return count;
 }
 
@@ -329,6 +346,10 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     struct ViewPort *real_vp = vp;
 
+    Style view_bg = style_bg(style_new(), colour_vt(VT_BR_RED));
+
+    Style num_text = style_fg(view_bg, colour_vt(VT_BLU));
+
     if(v->vp) {
         real_vp = v->vp;
     }
@@ -376,22 +397,21 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             set_cursor_pos(real_vp->off_x, real_vp->off_y+i+line_off + extra_render_line_count);
 
             if (num_width) {
-                dprintf(
-                    STDOUT_FILENO,
-                    "%s%*ld%s ",
-                    CSI "90m",
-                    num_width - 1,
-                    i + v->line_off + 1,
-                    CSI "39;49m"
-                );
+                style_fmt(
+                        &num_text,
+                        STDOUT_FILENO,
+                        "%*ld ",
+                        num_width - 1,
+                        i + v->line_off + 1
+                    );
             }
 
             Str tail = str_tail(&l, char_off);
-            write_escaped(STDOUT_FILENO, &tail, len);
+            write_escaped(&view_bg, STDOUT_FILENO, &tail, len);
             // fill the rest of the line, useful when views overlap
             int fill = real_width-take_width-num_width;
             if(fill) {
-                dprintf(STDOUT_FILENO, "%*s", fill, "~");
+                style_fmt(&view_bg, STDERR_FILENO, "%*s", fill, " ");
             }
 
             // reached the end of the line
@@ -413,16 +433,20 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
     for(int j = i + line_off; j < real_height; j++) {
         set_cursor_pos(real_vp->off_x, real_vp->off_y+j);
         if (num_width) {
-            dprintf(
-                STDOUT_FILENO,
-                "%s%*c%s ",
-                CSI "90m",
-                num_width - 1,
-                '~',
-                CSI "39;49m"
-            );
+            style_fmt(
+                    &num_text,
+                    STDOUT_FILENO,
+                    "%*c ",
+                    num_width - 1,
+                    '~'
+                );
         }
-        dprintf(STDOUT_FILENO, "%*s", real_width-num_width, " ");
+        style_fmt(
+                &view_bg,
+                STDOUT_FILENO,
+                "%*s",
+                real_width-num_width,
+                " ");
     }
 
     if(ac && v->buff->lines) {
@@ -495,8 +519,12 @@ size_t TABS_CAP = 0;
 size_t ACTIVE_TAB = 0;
 
 int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
+    Style line_style = {0};
+    line_style = style_fg(line_style, colour_vt(VT_YEL));
+
     int is_odd = 0;
     struct ViewPort self_vp = *vp;
+
     if(w->child) {
         struct ViewPort sub_vp;
         switch(w->split_dir) {
@@ -511,7 +539,7 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
                 // render split line
                 for(int i = 0; i < self_vp.height; i++) {
                     set_cursor_pos(self_vp.width + vp->off_x, i + vp->off_y);
-                    dprintf(STDOUT_FILENO, "%s", CSI"90m" "|" CSI"39;49m");
+                    style_fmt(&line_style,  STDERR_FILENO, "|");
                 }
             } break;
             case SD_Horizontal: {
@@ -524,7 +552,7 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
                 // render split line
                 for(int i = 0; i <= self_vp.width; i++) {
                     set_cursor_pos(i + vp->off_x, vp->off_y+self_vp.height);
-                    dprintf(STDOUT_FILENO, "%s", CSI"90m" "-" CSI"39;49m");
+                    style_fmt(&line_style,  STDERR_FILENO, "-");
                 }
 
             } break;
@@ -951,11 +979,22 @@ int mode_change(enum Mode mode) {
 }
 
 int active_line_render(struct winsize *ws) {
-    set_cursor_pos(0, ws->ws_row - 2);
-
     struct View *v = tab_active_view(TABS + ACTIVE_TAB);
 
-    dprintf(STDOUT_FILENO,
+    Style active_line_style = style_bg(style_new(), colour_vt(VT_GRA));
+    // TODO(louis) compute render with first
+    set_cursor_pos(0, ws->ws_row - 2);
+    style_fmt(
+            &active_line_style,
+            STDOUT_FILENO,
+            "%*c",
+            ws->ws_col,
+            ' ');
+
+    set_cursor_pos(0, ws->ws_row - 2);
+    style_fmt(
+            &active_line_style,
+            STDOUT_FILENO,
             "[%s] (%ld, %ld) %ld/%ld %ld",
             mode_current().mode_str,
             v->view_cursor.off_x + 1,
@@ -970,7 +1009,7 @@ int active_line_render(struct winsize *ws) {
 
 int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     struct ViewPort vp = {
-        .width = ws->ws_col-1,
+        .width = ws->ws_col,
         .height = 1,
         .off_x = 0,
         .off_y = ws->ws_row-1,

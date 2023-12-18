@@ -186,7 +186,9 @@ int main(int argc, const char **argv) {
     struct Window win3 = win;
     win3.view_stack = views;
     win2.view_stack = &v2;
+
     win.child = &win2;
+
     win2.split_dir = SD_Horizontal;
     win2.child = &win3;
 
