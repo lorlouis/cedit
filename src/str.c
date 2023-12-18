@@ -299,17 +299,26 @@ Str str_tail(const Str *s, size_t idx) {
 }
 
 Str str_head(const Str *s, size_t idx) {
-
-    size_t byte_off = str_get_char_byte_idx(s, idx);
     Vec v = s->v;
-    v.len = byte_off;
     v.cap = SIZE_MAX;
 
     Vec char_pos = s->char_pos;
+
     if(!vec_is_empty(&s->char_pos)) {
         char_pos.len = idx;
         char_pos.cap = SIZE_MAX;
     }
+
+    if(idx == str_len(s)+1) {
+        return (Str) {
+            .v = v,
+            .char_pos = char_pos,
+        };
+    }
+
+    size_t byte_off = str_get_char_byte_idx(s, idx);
+    v.len = byte_off;
+
     return (Str) {
         .v = v,
         .char_pos = char_pos,
