@@ -367,6 +367,8 @@ int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, s
             if(char_off < str_len(&l)) {
                 Str tail = str_tail(&l, char_off);
                 len = take_cols(&tail, &take_width, TAB_WIDTH);
+            } else {
+                take_width = 0;
             }
 
             assert(len >= 0 && "bad string");
@@ -501,7 +503,7 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
             case SD_Vertical: {
                 // Look mah! No npm
                 is_odd = (self_vp.width-1) % 2;
-                self_vp.height = (self_vp.width-1) / 2;
+                self_vp.width = (self_vp.width-1) / 2;
                 sub_vp = self_vp;
                 self_vp.width += is_odd;
                 sub_vp.off_x += self_vp.width+1;
