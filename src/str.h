@@ -74,6 +74,8 @@ Str str_tail(const Str *s, size_t idx);
 
 Str str_head(const Str *s, size_t idx);
 
+int str_remove(Str *s, size_t start, size_t end);
+
 int str_is_empty(Str *s);
 
 #ifdef UTF_H

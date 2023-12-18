@@ -272,7 +272,9 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         v->view_cursor.off_x += new_len - original_len;
 
         if(s[off] == '\n') {
-            str_trunc(line, cursor);
+            if(cursor <= str_len(line)) {
+                str_trunc(line, cursor);
+            }
             off++;
             // add 1 more line
             if(1+v->buff->lines_len >= v->buff->lines_cap) {
@@ -491,6 +493,7 @@ size_t TABS_CAP = 0;
 size_t ACTIVE_TAB = 0;
 
 int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
+    int is_odd = 0;
     struct ViewPort self_vp = *vp;
     if(w->child) {
         struct ViewPort sub_vp;
@@ -505,22 +508,21 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
                 self_vp.width -= is_even;
 
                 // render split line
-                for(int i = 0; i <= self_vp.height; i++) {
+                for(int i = 0; i < self_vp.height; i++) {
                     set_cursor_pos(self_vp.width + vp->off_x, i + vp->off_y);
                     dprintf(STDOUT_FILENO, "%s", CSI"90m" "|" CSI"39;49m");
                 }
             } break;
             case SD_Horizontal: {
-                int is_odd = (self_vp.height-1) % 2;
-                int is_even = !is_odd;
+                is_odd = (self_vp.height-1) % 2;
                 self_vp.height = (self_vp.height-1) / 2;
                 sub_vp = self_vp;
-                sub_vp.off_y += self_vp.height+1+is_odd;
-                self_vp.height -= is_even;
+                self_vp.height += is_odd;
+                sub_vp.off_y += self_vp.height+1;
 
                 // render split line
                 for(int i = 0; i <= self_vp.width; i++) {
-                    set_cursor_pos(i + vp->off_x, vp->off_y+self_vp.height+1);
+                    set_cursor_pos(i + vp->off_x, vp->off_y+self_vp.height);
                     dprintf(STDOUT_FILENO, "%s", CSI"90m" "-" CSI"39;49m");
                 }
 
@@ -750,12 +752,7 @@ int view_erase(struct View *v) {
 
     Str *line = v->buff->lines + v->view_cursor.off_y;
     if(cursor > 0) {
-        size_t end = str_get_char_byte_idx(line, cursor);
-        size_t start = str_get_char_byte_idx(line, cursor-1);
-
-        str_insert_at(line, cursor-1, str_as_cstr(line) + end, str_cstr_len(line) - end);
-
-        str_trunc(line, str_cstr_len(line) -(end-start));
+        str_remove(line, cursor-1, cursor-1);
         v->view_cursor.off_x -= 1;
     } else if(v->view_cursor.off_y > 0) {
         size_t cursor_line = v->view_cursor.off_y;

@@ -3,8 +3,8 @@
 #include <assert.h>
 #include <errno.h>
 
-#include "str.h"
 #include "utf.h"
+#include "str.h"
 
 const char *EMPTY_STR = "";
 
@@ -22,6 +22,18 @@ static void vec_grow_to_fit(Vec *v, size_t count) {
 
 int vec_is_empty(const Vec *v) {
     return v->len == 0;
+}
+
+void vec_trunk(Vec *v, size_t len) {
+    assert(len <= v->len && "index out of range");
+
+    if(v->free_fn) {
+        for(size_t i = len; i < v->len; i++) {
+            v->free_fn(vec_get(v, i));
+        }
+    }
+
+    v->len = len;
 }
 
 void vec_extend(Vec *v, const void *data, size_t count) {
@@ -123,7 +135,7 @@ static int build_character_table(Vec *ct, size_t start_off, const char *s, size_
     while(i <= size) {
         int byte_count = utf8_byte_count(s[i]);
         if(byte_count < 1) return -1;
-        size_t entry = i+start_off;
+        size_t entry = i;
         vec_push(ct, &entry);
         if(s[i] == '\0') break;
         i += byte_count;
@@ -145,9 +157,10 @@ static int is_ascii(const char *s, size_t len) {
 int str_push(Str *s, char const *o, size_t len) {
     if(len == 0) return 0;
     s->v.type_size = sizeof(char);
-    size_t original_len = s->v.len;
 
+    // remove null terminator
     vec_pop(&s->v, NULL);
+    size_t original_size = s->v.len;
     vec_extend(&s->v, o, len);
 
     if(*VEC_GET(char, &s->v, s->v.len-1) != '\0') {
@@ -160,8 +173,10 @@ int str_push(Str *s, char const *o, size_t len) {
     if(!ascii_only) {
         int start_off = 0;
         if(s->char_pos.len) {
-            start_off = original_len;
+            start_off = original_size;
         }
+        // remove null terminator
+        vec_pop(&s->char_pos, NULL);
         int ret = build_character_table(
                 &s->char_pos,
                 start_off,
@@ -192,10 +207,18 @@ void str_free(Str *s) {
 }
 
 void str_trunc(Str *s, size_t new_len) {
-    s->v.type_size = sizeof(char);
-    if(new_len >= s->v.len) return;
-    ((char*)s->v.buf)[new_len+1] = '\0';
-    s->v.len = new_len+1;
+    assert(new_len <= str_len(s) && "index out of range");
+    if(new_len == str_len(s)) return;
+
+    size_t new_last_idx = str_get_char_byte_idx(s, new_len);
+    utf32 c = 0;
+    str_get_char_byte_idx(s, new_last_idx);
+    size_t c_len = utf32_len_utf8(c);
+
+    size_t new_len_idx = new_last_idx + c_len -1;
+
+    s->v.len = new_len_idx+1;
+    ((char*)s->v.buf)[new_last_idx+1] = '\0';
     return;
 }
 
@@ -245,12 +268,37 @@ size_t str_len(const Str *s) {
     return s->v.len -1;
 }
 
+int str_remove(Str *s, size_t start, size_t end) {
+    assert(start <= end && "invalid range");
+
+    utf32 end_char = 0;
+    if(str_get_char(s, end, &end_char)) return -1;
+
+    int end_char_width = utf32_len_utf8(end_char);
+
+    size_t start_idx = str_get_char_byte_idx(s, start);
+    size_t end_idx = str_get_char_byte_idx(s, end) + end_char_width;
+
+    memmove(s->v.buf + start_idx, s->v.buf + end_idx, s->v.len - end_idx);
+
+    size_t diff = end_idx - start_idx;
+    s->v.len -= diff;
+    ((char*)s->v.buf)[s->v.len-1] = '\0';
+
+    if(s->char_pos.len) {
+        vec_trunk(&s->char_pos, end);
+        build_character_table(&s->char_pos, start_idx, s->v.buf, s->v.len);
+    }
+
+    return 0;
+}
+
 size_t str_get_char_byte_idx(const Str *s, size_t idx) {
     if(s->char_pos.buf) {
         size_t *new_idx = VEC_GET(size_t, &s->char_pos, idx);
         if(new_idx) return *new_idx;
         return -1;
-    } else if (idx <= s->v.len) return idx;
+    } else if (idx < s->v.len) return idx;
     return -1;
 }
 
