@@ -128,16 +128,16 @@ int main(int argc, const char **argv) {
 
     term_init();
 
-    struct Buffer buff = {0};
-    if(buffer_init_from_path(&buff, "Makefile", FM_RW)) {
+    struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+    if(buffer_init_from_path(buff, "Makefile", FM_RW)) {
         perror("unable to open file");
         exit(1);
     }
 
-    struct Buffer buff2 = {0};
+    struct Buffer *buff2 = calloc(1, sizeof(struct Buffer));
 
     struct View view = {
-        .buff = &buff,
+        .buff = buff,
         .line_off = 0,
         .view_cursor = {
             .off_x = 0,
@@ -147,18 +147,18 @@ int main(int argc, const char **argv) {
 
 
     struct View v2 = {
-        .buff = &buff2,
+        .buff = buff2,
         .line_off = 3,
         .view_cursor = {
             .off_x = 0,
             .off_y = 0,
         },
-        .vp = &(struct ViewPort) {
+        .vp = Some({
             .height = 4,
             .width = 32,
             .off_x = 7,
             .off_y = 10,
-        }
+        }),
     };
 
     // switch to alternate
@@ -168,24 +168,30 @@ int main(int argc, const char **argv) {
 
     struct Window win = window_new();
     window_view_push(&win, view);
+    //window_view_push(&win, v2);
 
     struct Tab tab = {
         .name = NULL,
-        .w = &win,
+        .w = win,
         .active_window = 0,
     };
 
-    tabs_push(tab);
+    struct Window w2 = window_new();
+    window_view_push(&w2, v2);
 
     tabs_push(tab);
+
+    tabs_push(tab_new(window_clone(&win), 0));
+
+    tabs_push(tab_new(w2, 0));
+
+    editor_init();
 
     editor_render(&WS);
     while(RUNNING) {
         if(handle_keys()) editor_render(&WS);
         usleep(10);
     }
-
-    buffer_cleanup(&buff);
 
     editor_teardown();
 

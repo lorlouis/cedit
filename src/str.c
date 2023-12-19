@@ -108,7 +108,7 @@ void vec_clear(Vec *v) {
             v->free_fn(v->buf + i * v->type_size);
         }
     }
-    memset(v->buf, 0, v->cap * v->type_size);
+    memset(v->buf, 0, v->len * v->type_size);
     v->len = 0;
     return;
 }
@@ -322,6 +322,8 @@ Str str_clone(const Str *s) {
 
 Str str_from_cstr(const char *s) {
     Str new = str_new();
+    if(!s) return new;
+
     size_t s_len = strlen(s);
     str_push(&new, s, s_len);
     return new;

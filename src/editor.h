@@ -83,14 +83,33 @@ struct Buffer* buffer_rc_inc(struct Buffer *buff);
 //  0 when the content still exists
 int buffer_rc_dec(struct Buffer *buff);
 
+enum MaybeVariant {
+    None,
+    Some,
+};
+
+#define Maybe(T) \
+    struct Maybe##T { \
+        enum MaybeVariant o; \
+        union { \
+            char none; \
+            T some; \
+        }u;\
+    }
+
+#define is_some(m) ((m).o == Some)
+#define is_none(m) ((m).o == None)
+#define as_ptr(m) ((m).o == Some ? &m.u.some : 0)
+#define Some(...) {.o = Some, .u.some = __VA_ARGS__ }
+
 // View Port is computed in absolute screen coordinates
-struct ViewPort {
+typedef struct {
     uint16_t width;
     uint16_t height;
 
     uint16_t off_x;
     uint16_t off_y;
-};
+} ViewPort;
 
 struct ViewCursor {
     size_t off_x;
@@ -106,8 +125,13 @@ struct View {
     struct ViewCursor view_cursor;
     struct Buffer *buff;
     struct ViewOpt options;
-    struct ViewPort *vp;
+    Maybe(ViewPort) vp;
 };
+
+// does not clone `buff`
+struct View view_new(struct Buffer *buff);
+
+struct View view_clone(struct View *v);
 
 enum Direction {
     DIR_Up = 1,
@@ -130,16 +154,22 @@ struct Window {
 
 struct Window window_new(void);
 
-int window_view_push(struct Window *w, struct View v);
+// Copies a window, but does not copy it's children
+struct Window window_clone(struct Window *w);
 
+void window_free(struct Window *w);
+
+int window_view_push(struct Window *w, struct View v);
 
 int window_view_pop(struct Window *w, struct View *v);
 
 struct Tab {
-    struct Window *w;
+    struct Window w;
     size_t active_window;
     Str name;
 };
+
+struct Tab tab_new(struct Window w, char *name);
 
 void tab_free(struct Tab *t);
 
@@ -169,12 +199,12 @@ int buffer_init_from_path(
 // Frees the content of buffer
 void buffer_cleanup(struct Buffer *buff);
 
-uint16_t viewport_viewable_width(const struct ViewPort *vp, const struct winsize *ws);
-uint16_t viewport_viewable_height(const struct ViewPort *vp, const struct winsize *ws);
+uint16_t viewport_viewable_width(const ViewPort *vp, const struct winsize *ws);
+uint16_t viewport_viewable_height(const ViewPort *vp, const struct winsize *ws);
 
 int view_render(
         struct View *v,
-        struct ViewPort *vp,
+        ViewPort *vp,
         const struct winsize *ws,
         struct AbsoluteCursor *ac);
 
@@ -191,6 +221,8 @@ int tabs_push(struct Tab tab);
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
 
 struct Window* tab_active_window(struct Tab *tab);
+
+void editor_init(void);
 
 int editor_render(struct winsize *ws);
 

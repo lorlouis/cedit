@@ -23,11 +23,8 @@ struct AbsoluteCursor {
     uint16_t row;
 };
 
-// defaults to a scratch
-static struct Buffer MESSAGE_BUFFER = {0};
-
 struct View MESSAGE = {
-    .buff = &MESSAGE_BUFFER,
+    .buff = 0,
     .options = {
         .no_line_num = 0,
     }
@@ -130,6 +127,7 @@ int buffer_init_from_path(
         errno = ferror(f);
         goto err;
     }
+    fclose(f);
 
     buff->in.ty = INPUTTY_FILE;
     buff->in.u.file.fm = fm;
@@ -214,7 +212,7 @@ int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
     return count;
 }
 
-uint16_t viewport_viewable_width(const struct ViewPort *vp, const struct winsize *ws) {
+uint16_t viewport_viewable_width(const ViewPort *vp, const struct winsize *ws) {
     uint16_t real_width = vp->width;
     if(vp->width + vp->off_x > ws->ws_col) {
         real_width = vp->width - ((vp->width + vp->off_x) - ws->ws_col);
@@ -222,7 +220,7 @@ uint16_t viewport_viewable_width(const struct ViewPort *vp, const struct winsize
     return real_width;
 }
 
-uint16_t viewport_viewable_height(const struct ViewPort *vp, const struct winsize *ws) {
+uint16_t viewport_viewable_height(const ViewPort *vp, const struct winsize *ws) {
     uint16_t real_height = vp->height;
     if(vp->height + vp->off_y >= ws->ws_row) {
         real_height = vp->height - ((vp->height + vp->off_y) - ws->ws_row);
@@ -230,13 +228,13 @@ uint16_t viewport_viewable_height(const struct ViewPort *vp, const struct winsiz
     return real_height;
 }
 
-uint16_t viewport_width_clamp(const struct ViewPort *vp, const struct winsize *ws, uint16_t v) {
+uint16_t viewport_width_clamp(const ViewPort *vp, const struct winsize *ws, uint16_t v) {
     if(v < vp->off_x) return vp->off_x;
     if(v > vp->off_x + ws->ws_col -1) return vp->off_x + ws->ws_col -1;
     return v;
 }
 
-uint16_t viewport_height_clamp(const struct ViewPort *vp, const struct winsize *ws, uint16_t v) {
+uint16_t viewport_height_clamp(const ViewPort *vp, const struct winsize *ws, uint16_t v) {
     if(v < vp->off_y) return vp->off_y;
     if(v > vp->off_y + ws->ws_row-1) return vp->off_y + ws->ws_row-1;
     return v;
@@ -348,15 +346,15 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
     view_set_cursor(v, new_x, new_y);
 }
 
-int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
-    struct ViewPort *real_vp = vp;
+int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
+    ViewPort *real_vp = vp;
 
     Style view_bg = style_new();
 
     Style num_text = style_fg(view_bg, colour_vt(VT_BLU));
 
-    if(v->vp) {
-        real_vp = v->vp;
+    if(is_some(v->vp)) {
+        real_vp = as_ptr(v->vp);
     }
 
     uint16_t real_width = viewport_viewable_width(real_vp, ws);
@@ -512,15 +510,26 @@ struct Buffer* buffer_rc_inc(struct Buffer *buff) {
 int buffer_rc_dec(struct Buffer *buff) {
     if(!buff->rc) {
         buffer_cleanup(buff);
+        xfree(buff);
         return 1;
     }
     buff->rc -= 1;
     return 0;
 }
 
+struct Tab tab_new(struct Window w, char *name) {
+    return (struct Tab) {
+        .w = w,
+        .active_window = 0,
+        .name = str_from_cstr(name),
+    };
+}
+
 void tab_free(struct Tab *t) {
     str_free(&t->name);
+    window_free(&t->w);
 }
+
 
 Vec TABS = VEC_NEW(struct Tab, (void(*)(void*))tab_free);
 size_t ACTIVE_TAB = 0;
@@ -570,18 +579,38 @@ struct Window window_new(void) {
     };
 }
 
-void window_free(struct Window *w) {
+// Copies a window, but does not copy it's children
+struct Window window_clone(struct Window *w) {
+    Vec new_view_stack = VEC_NEW(struct View, (void(*)(void*))view_free);
+    for(size_t i = 0; i < w->view_stack.len; i++) {
+        struct View clone = view_clone(window_view_get(w, i));
+        vec_push(&new_view_stack, (void*)&clone);
+    }
+    return (struct Window) {
+        .split_dir = w->split_dir,
+        .child = 0,
+        .view_stack = new_view_stack,
+        .active_view = w->active_view,
+    };
 }
 
-int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
+void window_free(struct Window *w) {
+    vec_cleanup(&w->view_stack);
+    if(w->child) {
+        window_free(w->child);
+        w->child = 0;
+    }
+}
+
+int window_render(struct Window *w, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     Style line_style = {0};
     line_style = style_fg(line_style, colour_vt(VT_YEL));
 
     int is_odd = 0;
-    struct ViewPort self_vp = *vp;
+    ViewPort self_vp = *vp;
 
     if(w->child) {
-        struct ViewPort sub_vp;
+        ViewPort sub_vp;
         switch(w->split_dir) {
             case SD_Vertical: {
                 // Look mah! No npm
@@ -651,7 +680,7 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
 }
 
 struct Window* tab_get_window(struct Tab *tab, size_t idx) {
-    struct Window *w = tab->w;
+    struct Window *w = &tab->w;
     // select current window
     for(size_t i = 0; i < idx; i++) {
         w = w->child;
@@ -763,7 +792,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
         }
     }
     style_reset(STDOUT_FILENO);
-    struct ViewPort vp = {
+    ViewPort vp = {
         // some space to put the status line
         .height = ws->ws_row - 3,
         .width = ws->ws_col,
@@ -773,7 +802,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
         .off_y = 1,
     };
 
-    window_render(tab_active()->w, &vp, ws, ac);
+    window_render(&tab_active()->w, &vp, ws, ac);
 
     return 0;
 }
@@ -829,6 +858,23 @@ int normal_handle_key(struct KeyEvent *e) {
     }
 
     return 0;
+}
+
+// does not clone `buff`
+struct View view_new(struct Buffer *buff) {
+    return (struct View) {
+        .line_off = 0,
+        .view_cursor = {0},
+        .buff = buff,
+        .options = {0},
+        .vp = {0},
+    };
+}
+
+struct View view_clone(struct View *v) {
+    struct View view = *v;
+    buffer_rc_inc(view.buff);
+    return view;
 }
 
 int view_erase(struct View *v) {
@@ -937,7 +983,7 @@ int window_handle_key(struct KeyEvent *e) {
 }
 
 int command_enter(void) {
-    buffer_cleanup(&MESSAGE_BUFFER);
+    buffer_cleanup(MESSAGE.buff);
     MESSAGE.line_off = 0;
     MESSAGE.view_cursor.off_x = 0;
     MESSAGE.view_cursor.off_y = 0;
@@ -946,7 +992,7 @@ int command_enter(void) {
 }
 
 int command_leave(void) {
-    buffer_cleanup(&MESSAGE_BUFFER);
+    buffer_cleanup(MESSAGE.buff);
     return 0;
 }
 
@@ -960,8 +1006,8 @@ int command_handle_key(struct KeyEvent *e) {
             view_erase(&MESSAGE);
             return 0;
         } else if(e->key == '\n') {
-            if(MESSAGE_BUFFER.lines) {
-                Str command = str_clone(MESSAGE_BUFFER.lines);
+            if(MESSAGE.buff->lines) {
+                Str command = str_clone(MESSAGE.buff->lines);
                 view_clear(&MESSAGE);
                 // exec command will write into the message buffer
                 exec_command(str_as_cstr(&command));
@@ -1063,7 +1109,7 @@ int active_line_render(struct winsize *ws) {
 }
 
 int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
-    struct ViewPort vp = {
+    ViewPort vp = {
         .width = ws->ws_col,
         .height = 1,
         .off_x = 0,
@@ -1084,7 +1130,7 @@ int editor_render(struct winsize *ws) {
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
 
-    if(MESSAGE_BUFFER.lines && MODE == M_Command) {
+    if(MESSAGE.buff->lines && MODE == M_Command) {
         if(message_line_render(ws, &ac)) return -1;
     } else {
         if(message_line_render(ws, 0)) return -1;
@@ -1093,7 +1139,12 @@ int editor_render(struct winsize *ws) {
     return 0;
 }
 
+void editor_init(void) {
+    MESSAGE.buff = calloc(1, sizeof(struct Buffer));
+}
+
 void editor_teardown(void) {
     vec_cleanup(&TABS);
+    view_free(&MESSAGE);
     return;
 }
