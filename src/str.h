@@ -27,6 +27,11 @@ void vec_clear(Vec *v);
 
 void* vec_get(const Vec *v, size_t idx);
 
+// Returns 1 if there was something to pop
+int vec_pop(Vec *v, void *out);
+
+void vec_push(Vec *v, void *data);
+
 int vec_insert(Vec *v, size_t idx, void *data);
 
 #define VEC_GET(type, v, idx) (type*)vec_get(v, idx)

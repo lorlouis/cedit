@@ -150,6 +150,7 @@ int buffer_init_from_path(
         return -1;
 }
 
+// DO NOT USE DIRECTLY, USE `buffer_rc_dec`
 void buffer_cleanup(struct Buffer *buff) {
     if(buff->lines) {
         for(size_t i = 0; i < buff->lines_len; i++) {
@@ -250,6 +251,10 @@ void view_clear(struct View *v) {
     }
 }
 
+void view_free(struct View *v) {
+    buffer_rc_dec(v->buff);
+}
+
 int view_write(struct View *v, const char *restrict s, size_t len) {
 
     size_t off = 0;
@@ -346,7 +351,7 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 int view_render(struct View *v, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     struct ViewPort *real_vp = vp;
 
-    Style view_bg = style_bg(style_new(), colour_vt(VT_BR_RED));
+    Style view_bg = style_new();
 
     Style num_text = style_fg(view_bg, colour_vt(VT_BLU));
 
@@ -513,10 +518,60 @@ int buffer_rc_dec(struct Buffer *buff) {
     return 0;
 }
 
-struct Tab *TABS = 0;
-size_t TABS_LEN = 0;
-size_t TABS_CAP = 0;
+void tab_free(struct Tab *t) {
+    str_free(&t->name);
+}
+
+Vec TABS = VEC_NEW(struct Tab, (void(*)(void*))tab_free);
 size_t ACTIVE_TAB = 0;
+
+
+struct Tab* tab_get(size_t idx) {
+    return VEC_GET(struct Tab, &TABS, idx);
+}
+
+struct Tab* tab_active(void) {
+    return tab_get(ACTIVE_TAB);
+}
+
+int tabs_push(struct Tab tab) {
+    vec_push(&TABS, &tab);
+    return TABS.len;
+}
+
+int window_view_push(struct Window *w, struct View v) {
+    w->view_stack.type_size = sizeof(struct View);
+    vec_push(&w->view_stack, &v);
+    return w->view_stack.len;
+}
+
+int window_view_pop(struct Window *w, struct View *v) {
+    w->view_stack.type_size = sizeof(struct View);
+    vec_pop(&w->view_stack, v);
+    return w->view_stack.len;
+}
+
+struct View* window_view_get(struct Window *w, size_t idx) {
+    w->view_stack.type_size = sizeof(struct View);
+    return VEC_GET(struct View, &w->view_stack, idx);
+}
+
+struct View* window_view_active(struct Window *w) {
+    return window_view_get(w, w->active_view);
+}
+
+struct Window window_new(void) {
+    Vec view_stack = VEC_NEW(struct View, (void(*)(void*))view_free);
+    return (struct Window) {
+        .split_dir = SD_Vertical,
+        .active_view = 0,
+        .child = 0,
+        .view_stack = view_stack,
+    };
+}
+
+void window_free(struct Window *w) {
+}
 
 int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     Style line_style = {0};
@@ -559,36 +614,36 @@ int window_render(struct Window *w, struct ViewPort *vp, const struct winsize *w
         }
         window_render(w->child, &sub_vp, ws, ac);
         // render subwindow(s)
-        if(tab_active_window(TABS + ACTIVE_TAB) == w) {
+        if(tab_active_window(tab_active()) == w) {
             // render self window with cursor
-            for(size_t i = 0; i < w->view_stack_len; i++) {
+            for(size_t i = 0; i < w->view_stack.len; i++) {
                 if(i == w->active_view) {
-                    view_render(w->view_stack + i, &self_vp, ws, ac);
+                    view_render(window_view_get(w, i), &self_vp, ws, ac);
                 } else {
-                    view_render(w->view_stack + i, &self_vp, ws, 0);
+                    view_render(window_view_get(w, i), &self_vp, ws, 0);
                 }
             }
         } else {
             // render self window
-            for(size_t i = 0; i < w->view_stack_len; i++) {
-                view_render(w->view_stack + i, &self_vp, ws, 0);
+            for(size_t i = 0; i < w->view_stack.len; i++) {
+                view_render(window_view_get(w, i), &self_vp, ws, 0);
             }
         }
         self_vp = sub_vp;
     } else {
-        if(tab_active_window(TABS + ACTIVE_TAB) == w) {
+        if(tab_active_window(tab_active()) == w) {
             // render self window with cursor
-            for(size_t i = 0; i < w->view_stack_len; i++) {
+            for(size_t i = 0; i < w->view_stack.len; i++) {
                 if(i == w->active_view) {
-                    view_render(w->view_stack + i, &self_vp, ws, ac);
+                    view_render(window_view_get(w, i), &self_vp, ws, ac);
                 } else {
-                    view_render(w->view_stack + i, &self_vp, ws, 0);
+                    view_render(window_view_get(w, i), &self_vp, ws, 0);
                 }
             }
         } else {
             // render self window
-            for(size_t i = 0; i < w->view_stack_len; i++) {
-                view_render(w->view_stack + i, &self_vp, ws, 0);
+            for(size_t i = 0; i < w->view_stack.len; i++) {
+                view_render(window_view_get(w, i), &self_vp, ws, 0);
             }
         }
     }
@@ -610,7 +665,7 @@ struct Window* tab_active_window(struct Tab *tab) {
 
 struct View* tab_active_view(struct Tab *tab) {
     struct Window *w = tab_active_window(tab);
-    return w->view_stack + w->active_view;
+    return window_view_active(w);
 }
 
 int tabs_prev(void) {
@@ -621,12 +676,12 @@ int tabs_prev(void) {
 }
 
 int tabs_next(void) {
-    if(ACTIVE_TAB < TABS_LEN-1) ACTIVE_TAB += 1;
+    if(ACTIVE_TAB < TABS.len-1) ACTIVE_TAB += 1;
     return ACTIVE_TAB;
 }
 
 int tabs_win_select(enum Direction dir) {
-    struct Tab *cur_tab = TABS + ACTIVE_TAB;
+    struct Tab *cur_tab = tab_active();
     struct Window *cur_window = tab_active_window(cur_tab);
     switch(dir) {
         // looks for next window
@@ -673,41 +728,41 @@ int tabs_win_select(enum Direction dir) {
     return 0;
 }
 
-int tabs_push(struct Tab tab) {
-    if(TABS_LEN == TABS_CAP) {
-        TABS_CAP = TABS_CAP > 0 ? TABS_CAP * 2 : 1;
-        TABS = xrealloc(TABS, TABS_CAP * sizeof(struct Tab));
-    }
-    TABS[TABS_LEN] = tab;
-    TABS_LEN += 1;
-    return TABS_LEN;
-}
-
 // TODO(louis) free tabs
 
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
+    Style unselected = style_bg(style_new(), colour_vt(VT_GRA));
+    Style selected = style_bg(style_new(), colour_vt(VT_BLK));
+    selected = style_fg(selected, colour_vt(VT_BLU));
+
     size_t sum = 0;
     // render top bar
     set_cursor_pos(0,0);
-    for(size_t i = 0; i < TABS_LEN; i++) {
+    style_fmt(&unselected, STDOUT_FILENO, "%*c", ws->ws_col, ' ');
+    set_cursor_pos(0,0);
+    style_begin(&unselected, STDOUT_FILENO);
+    for(size_t i = 0; i < TABS.len; i++) {
         if(sum + 6 >= ws->ws_col) break;
         if(i == ACTIVE_TAB) {
-            dprintf(STDOUT_FILENO, INV);
+            style_reset(STDOUT_FILENO);
+            style_begin(&selected, STDOUT_FILENO);
         }
-        if(!str_is_empty(&TABS[i].name)) {
+        if(!str_is_empty(&tab_get(i)->name)) {
             size_t cols = 10;
-            int len = take_cols(&TABS[i].name, &cols, TAB_WIDTH);
+            int len = take_cols(&tab_get(i)->name, &cols, TAB_WIDTH);
             assert(len >= 0 && "error when computing len");
-            dprintf(STDOUT_FILENO, "[%.*s]", len, str_as_cstr(&TABS[i].name));
+            dprintf(STDOUT_FILENO, "[%.*s]", len, str_as_cstr(&tab_get(i)->name));
             sum+=cols+2;
         } else {
             dprintf(STDOUT_FILENO, "[%.4ld]", i);
             sum+=6;
         }
         if(i == ACTIVE_TAB) {
-            dprintf(STDOUT_FILENO, RESET);
+            style_reset(STDOUT_FILENO);
+            style_begin(&unselected, STDOUT_FILENO);
         }
     }
+    style_reset(STDOUT_FILENO);
     struct ViewPort vp = {
         // some space to put the status line
         .height = ws->ws_row - 3,
@@ -718,7 +773,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
         .off_y = 1,
     };
 
-    window_render(TABS[ACTIVE_TAB].w, &vp, ws, ac);
+    window_render(tab_active()->w, &vp, ws, ac);
 
     return 0;
 }
@@ -727,7 +782,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
 static enum Mode MODE = M_Normal;
 
 int normal_handle_key(struct KeyEvent *e) {
-    struct View *v = tab_active_view(TABS + ACTIVE_TAB);
+    struct View *v = tab_active_view(tab_active());
     if(e->modifier == 0) {
         switch(e->key) {
             case KC_ARRDOWN:
@@ -803,7 +858,7 @@ int view_erase(struct View *v) {
 }
 
 int insert_handle_key(struct KeyEvent *e) {
-    struct View *v = tab_active_view(TABS + ACTIVE_TAB);
+    struct View *v = tab_active_view(tab_active());
     if(e->key == '\e') {
         mode_change(M_Normal);
         return 0;
@@ -820,9 +875,9 @@ int insert_handle_key(struct KeyEvent *e) {
 }
 
 void view_next(void) {
-    struct Tab *cur_tab = TABS + ACTIVE_TAB;
+    struct Tab *cur_tab = tab_active();
     struct Window *cw = tab_active_window(cur_tab);
-    if(cw->view_stack_len > 0 && cw->active_view < cw->view_stack_len-1) {
+    if(cw->view_stack.len > 0 && cw->active_view < cw->view_stack.len-1) {
         cw->active_view += 1;
     } else {
         cw->active_view = 0;
@@ -830,12 +885,12 @@ void view_next(void) {
 }
 
 void view_prev(void) {
-    struct Tab *cur_tab = TABS + ACTIVE_TAB;
+    struct Tab *cur_tab = tab_active();
     struct Window *cw = tab_active_window(cur_tab);
     if(cw->active_view > 0) {
         cw->active_view -= 1;
-    } else if(cw->view_stack_len > 0){
-        cw->active_view = cw->view_stack_len-1;
+    } else if(cw->view_stack.len > 0){
+        cw->active_view = cw->view_stack.len-1;
     }
 }
 
@@ -979,7 +1034,7 @@ int mode_change(enum Mode mode) {
 }
 
 int active_line_render(struct winsize *ws) {
-    struct View *v = tab_active_view(TABS + ACTIVE_TAB);
+    struct View *v = tab_active_view(tab_active());
 
     Style active_line_style = style_bg(style_new(), colour_vt(VT_GRA));
     // TODO(louis) compute render with first
@@ -1001,7 +1056,7 @@ int active_line_render(struct winsize *ws) {
             v->view_cursor.off_y + 1,
             v->line_off + 1,
             v->buff->lines_len,
-            TABS[ACTIVE_TAB].active_window
+            tab_active()->active_window
             );
 
     return 0;
@@ -1036,4 +1091,9 @@ int editor_render(struct winsize *ws) {
     }
     set_cursor_pos(ac.col, ac.row);
     return 0;
+}
+
+void editor_teardown(void) {
+    vec_cleanup(&TABS);
+    return;
 }

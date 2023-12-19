@@ -124,16 +124,24 @@ enum SplitDir {
 struct Window {
     enum SplitDir split_dir;
     struct Window *child;
-    struct View *view_stack;
-    size_t view_stack_len;
+    Vec view_stack;
     size_t active_view;
 };
+
+struct Window window_new(void);
+
+int window_view_push(struct Window *w, struct View v);
+
+
+int window_view_pop(struct Window *w, struct View *v);
 
 struct Tab {
     struct Window *w;
     size_t active_window;
     Str name;
 };
+
+void tab_free(struct Tab *t);
 
 // Returns:
 //  Non zero on success
@@ -185,5 +193,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
 struct Window* tab_active_window(struct Tab *tab);
 
 int editor_render(struct winsize *ws);
+
+void editor_teardown(void);
 
 #endif

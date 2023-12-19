@@ -136,38 +136,29 @@ int main(int argc, const char **argv) {
 
     struct Buffer buff2 = {0};
 
-    struct View views[2] = {
-        {
-            .buff = &buff,
-            .line_off = 0,
-            .view_cursor = {
-                .off_x = 0,
-                .off_y = 0,
-            },
-        },
-        {
-            .buff = &buff2,
-            .line_off = 3,
-            .view_cursor = {
-                .off_x = 0,
-                .off_y = 0,
-            },
-            .vp = &(struct ViewPort) {
-                .height = 4,
-                .width = 32,
-                .off_x = 7,
-                .off_y = 10,
-            }
-        },
-    };
-
-    struct View v2 = {
+    struct View view = {
         .buff = &buff,
         .line_off = 0,
         .view_cursor = {
             .off_x = 0,
             .off_y = 0,
+        }
+    };
+
+
+    struct View v2 = {
+        .buff = &buff2,
+        .line_off = 3,
+        .view_cursor = {
+            .off_x = 0,
+            .off_y = 0,
         },
+        .vp = &(struct ViewPort) {
+            .height = 4,
+            .width = 32,
+            .off_x = 7,
+            .off_y = 10,
+        }
     };
 
     // switch to alternate
@@ -175,24 +166,8 @@ int main(int argc, const char **argv) {
     // register hook to return to normal buffer on exit
     atexit(alternate_buf_leave);
 
-    struct Window win = {
-        .child = NULL,
-        .split_dir = SD_Vertical,
-        .view_stack = views,
-        .view_stack_len = 1,
-    };
-
-    struct Window win2 = win;
-    struct Window win3 = win;
-    win3.view_stack = views;
-    win2.view_stack = &v2;
-
-    win.child = &win2;
-
-    win2.split_dir = SD_Horizontal;
-    win2.child = &win3;
-
-    win.view_stack_len = 2;
+    struct Window win = window_new();
+    window_view_push(&win, view);
 
     struct Tab tab = {
         .name = NULL,
@@ -201,11 +176,7 @@ int main(int argc, const char **argv) {
     };
 
     tabs_push(tab);
-    tab.name = str_from_cstr("theelo");
-    tabs_push(tab);
-    tabs_push(tab);
-    tab.name = str_new();
-    tabs_push(tab);
+
     tabs_push(tab);
 
     editor_render(&WS);
@@ -215,6 +186,8 @@ int main(int argc, const char **argv) {
     }
 
     buffer_cleanup(&buff);
+
+    editor_teardown();
 
     return 0;
 }
