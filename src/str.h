@@ -34,6 +34,8 @@ void vec_push(Vec *v, void *data);
 
 int vec_insert(Vec *v, size_t idx, void *data);
 
+void vec_remove(Vec *v, size_t idx);
+
 #define VEC_GET(type, v, idx) (type*)vec_get(v, idx)
 
 typedef struct {

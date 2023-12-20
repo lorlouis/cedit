@@ -530,6 +530,33 @@ void tab_free(struct Tab *t) {
     window_free(&t->w);
 }
 
+int tab_remove_window(struct Tab *t, int id) {
+    size_t idx = t->active_window;
+    if(id > 0) {
+        idx = (size_t)id;
+    }
+
+    struct Window *parent = 0;
+    struct Window *current = &t->w;
+    for(size_t i = 0; i < idx; i++) {
+        parent = current;
+        current = current->child;
+        assert(current && "index out of range");
+    }
+    // not the first node
+    if(parent) {
+        parent->child = current->child;
+        window_free(current);
+        free(current);
+        if(t->active_window >= idx && t->active_window >= 0) {
+            t->active_window -= 1;
+        }
+    } else {
+        window_free(current);
+        return -1;
+    }
+    return 0;
+}
 
 Vec TABS = VEC_NEW(struct Tab, (void(*)(void*))tab_free);
 size_t ACTIVE_TAB = 0;
@@ -548,6 +575,30 @@ int tabs_push(struct Tab tab) {
     return TABS.len;
 }
 
+int tabs_remove(int id) {
+    size_t idx = ACTIVE_TAB;
+    if(id > 0) {
+        idx = (size_t)id;
+    }
+
+    vec_remove(&TABS, idx);
+
+    if(ACTIVE_TAB >= idx && ACTIVE_TAB > 0) {
+        ACTIVE_TAB -= 1;
+    }
+
+    return TABS.len;
+}
+
+int tabs_pop(struct Tab tab) {
+    vec_pop(&TABS, 0);
+    if(ACTIVE_TAB >= TABS.len) {
+        ACTIVE_TAB = TABS.len -1;
+    }
+
+    return TABS.len;
+}
+
 int window_view_push(struct Window *w, struct View v) {
     w->view_stack.type_size = sizeof(struct View);
     vec_push(&w->view_stack, &v);
@@ -563,6 +614,21 @@ int window_view_pop(struct Window *w, struct View *v) {
 struct View* window_view_get(struct Window *w, size_t idx) {
     w->view_stack.type_size = sizeof(struct View);
     return VEC_GET(struct View, &w->view_stack, idx);
+}
+
+void window_close_view(struct Window *w, int id) {
+    size_t idx = w->active_view;
+    if(id >= 0) {
+        idx = (size_t) id;
+    }
+
+    vec_remove(&w->view_stack, idx);
+
+    if(w->active_view >= idx && w->active_view > 0) {
+        w->active_view -= 1;
+    }
+
+    return;
 }
 
 struct View* window_view_active(struct Window *w) {
@@ -600,6 +666,10 @@ void window_free(struct Window *w) {
         window_free(w->child);
         w->child = 0;
     }
+    w->child = 0;
+    w->active_view = 0;
+    w->split_dir = 0;
+    return;
 }
 
 int window_render(struct Window *w, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
@@ -643,7 +713,7 @@ int window_render(struct Window *w, ViewPort *vp, const struct winsize *ws, stru
         }
         window_render(w->child, &sub_vp, ws, ac);
         // render subwindow(s)
-        if(tab_active_window(tab_active()) == w) {
+        if(tab_window_active(tab_active()) == w) {
             // render self window with cursor
             for(size_t i = 0; i < w->view_stack.len; i++) {
                 if(i == w->active_view) {
@@ -660,7 +730,7 @@ int window_render(struct Window *w, ViewPort *vp, const struct winsize *ws, stru
         }
         self_vp = sub_vp;
     } else {
-        if(tab_active_window(tab_active()) == w) {
+        if(tab_window_active(tab_active()) == w) {
             // render self window with cursor
             for(size_t i = 0; i < w->view_stack.len; i++) {
                 if(i == w->active_view) {
@@ -688,12 +758,12 @@ struct Window* tab_get_window(struct Tab *tab, size_t idx) {
     return w;
 }
 
-struct Window* tab_active_window(struct Tab *tab) {
+struct Window* tab_window_active(struct Tab *tab) {
     return tab_get_window(tab, tab->active_window);
 }
 
 struct View* tab_active_view(struct Tab *tab) {
-    struct Window *w = tab_active_window(tab);
+    struct Window *w = tab_window_active(tab);
     return window_view_active(w);
 }
 
@@ -711,7 +781,7 @@ int tabs_next(void) {
 
 int tabs_win_select(enum Direction dir) {
     struct Tab *cur_tab = tab_active();
-    struct Window *cur_window = tab_active_window(cur_tab);
+    struct Window *cur_window = tab_window_active(cur_tab);
     switch(dir) {
         // looks for next window
         case DIR_Down: {
@@ -922,7 +992,7 @@ int insert_handle_key(struct KeyEvent *e) {
 
 void view_next(void) {
     struct Tab *cur_tab = tab_active();
-    struct Window *cw = tab_active_window(cur_tab);
+    struct Window *cw = tab_window_active(cur_tab);
     if(cw->view_stack.len > 0 && cw->active_view < cw->view_stack.len-1) {
         cw->active_view += 1;
     } else {
@@ -932,7 +1002,7 @@ void view_next(void) {
 
 void view_prev(void) {
     struct Tab *cur_tab = tab_active();
-    struct Window *cw = tab_active_window(cur_tab);
+    struct Window *cw = tab_window_active(cur_tab);
     if(cw->active_view > 0) {
         cw->active_view -= 1;
     } else if(cw->view_stack.len > 0){
@@ -1121,6 +1191,8 @@ int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
 }
 
 int editor_render(struct winsize *ws) {
+    if(!RUNNING) return 0;
+
     struct AbsoluteCursor ac = {
         .col = 1,
         .row = 1,
@@ -1137,6 +1209,34 @@ int editor_render(struct winsize *ws) {
     }
     set_cursor_pos(ac.col, ac.row);
     return 0;
+}
+
+void editor_quit_all(void) {
+    RUNNING = 0;
+    return;
+}
+
+void editor_quit(void) {
+    struct Tab *active_tab = tab_active();
+    struct Window *active_window = tab_window_active(active_tab);
+    window_close_view(active_window, -1);
+
+    if(active_window->view_stack.len > 0) {
+        return;
+    }
+
+    if(!tab_remove_window(active_tab, -1)) {
+        return;
+    }
+
+    tabs_remove(-1);
+
+    if(TABS.len > 0) {
+        return;
+    }
+
+    editor_quit_all();
+    return;
 }
 
 void editor_init(void) {

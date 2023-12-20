@@ -81,6 +81,26 @@ Vec vec_tail(const Vec *v, size_t idx) {
     return tail;
 }
 
+void vec_remove(Vec *v, size_t idx) {
+    assert(v->cap != SIZE_MAX && "vec is readonly");
+    assert(idx < v->len && "index out of range");
+    if(idx == v->len-1) {
+        vec_pop(v, 0);
+        return;
+    }
+
+    if(v->free_fn) {
+        v->free_fn(vec_get(v, idx));
+    }
+
+    memmove(
+            vec_get(v, idx),
+            vec_get(v, idx + 1),
+            (v->len - (idx+1)) * v->type_size);
+    v->len -= 1;
+    return;
+}
+
 int vec_insert(Vec *v, size_t idx, void *data) {
     assert(v->cap != SIZE_MAX && "vec is readonly");
     if(idx > v->len) return -EINVAL;
@@ -98,6 +118,7 @@ void vec_cleanup(Vec *v) {
     if(v->cap == SIZE_MAX) return;
     vec_clear(v);
     if(v->buf) xfree(v->buf);
+    v->buf = 0;
     return;
 }
 

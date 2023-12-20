@@ -173,6 +173,8 @@ struct Tab tab_new(struct Window w, char *name);
 
 void tab_free(struct Tab *t);
 
+struct Window* tab_window_active(struct Tab *tab);
+
 // Returns:
 //  Non zero on success
 //  0 on error and sets `errno`
@@ -218,14 +220,24 @@ int tabs_next(void);
 
 int tabs_push(struct Tab tab);
 
+int tabs_pop(struct Tab tab);
+
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
 
 struct Window* tab_active_window(struct Tab *tab);
+
+// editor api
 
 void editor_init(void);
 
 int editor_render(struct winsize *ws);
 
 void editor_teardown(void);
+
+// editor actions
+
+void editor_quit_all(void);
+
+void editor_quit(void);
 
 #endif

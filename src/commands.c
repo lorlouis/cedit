@@ -8,6 +8,9 @@ int exec_command(char *command) {
     do {
         if(!token) break;
         if(!strcmp(token, "q")) {
+            editor_quit();
+            return 0;
+        } else if(!strcmp(token, "qa")) {
             RUNNING = 0;
             return 0;
         } else {

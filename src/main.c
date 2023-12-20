@@ -189,7 +189,9 @@ int main(int argc, const char **argv) {
 
     editor_render(&WS);
     while(RUNNING) {
-        if(handle_keys()) editor_render(&WS);
+        if(handle_keys()) {
+            editor_render(&WS);
+        }
         usleep(10);
     }
 
