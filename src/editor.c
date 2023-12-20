@@ -1185,7 +1185,6 @@ int command_enter(void) {
 }
 
 int command_leave(void) {
-    message_clear();
     insert_leave();
     return 0;
 }
@@ -1249,7 +1248,7 @@ static struct ModeInterface MODES[] = {
         .mode_str = "COM",
         .handle_key = command_handle_key,
         .on_enter = command_enter,
-        .on_leave = 0,
+        .on_leave = command_leave,
     },
 };
 
@@ -1430,33 +1429,62 @@ void editor_write(const char *path) {
     xfree(expanded);
 }
 
-void editor_open(const char *path, enum FileMode fm) {
-    assert(path && "TODO reload file if it has a path");
-
+// Tries to open a view, all errors, if any will be logged in the message line
+int view_from_path(const char *path, enum FileMode fm, struct View *v) {
     struct Buffer *buff = calloc(1, sizeof(struct Buffer));
 
     char *expanded = 0;
     if(path_expand(path, &expanded)) {
         message_print("E: invalid characters in path: '%s'", path);
-        return;
+        return -1;
     }
 
     if(buffer_init_from_path(buff, expanded, fm)) {
         const char *error = strerror(errno);
         message_print("E: Unable to open '%s': %s", expanded, error);
         free(expanded);
+        return -1;
+    }
+
+    free(expanded);
+    *v = view_new(buff);
+    return 0;
+}
+
+void editor_tabnew(const char *path, enum FileMode fm) {
+    if(!path) {
+        struct Tab *active_tab = tab_active();
+        struct Window *active_window = tab_window_active(active_tab);
+        tabs_push(tab_new(window_clone(active_window), 0));
         return;
     }
+
+    struct View new_view = {0};
+
+    if(view_from_path(path, fm, &new_view)) {
+        return;
+    }
+
+    struct Window win = window_new();
+    window_view_push(&win, new_view);
+    tabs_push(tab_new(win, path));
+}
+
+void editor_open(const char *path, enum FileMode fm) {
+    assert(path && "TODO reload file if it has a path");
 
     struct Tab *active_tab = tab_active();
     struct Window *active_window = tab_window_active(active_tab);
     struct View *active_view = window_view_active(active_window);
 
-    struct View new_view = view_new(buff);
+    struct View new_view = {0};
+
+    if(view_from_path(path, fm, &new_view)) {
+        return;
+    }
+
     view_free(active_view);
     *active_view = new_view;
-
-    free(expanded);
 }
 
 void editor_init(void) {

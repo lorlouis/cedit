@@ -251,6 +251,8 @@ void editor_quit(void);
 
 void editor_open(const char *path, enum FileMode fm);
 
+void editor_tabnew(const char *path, enum FileMode fm);
+
 void editor_write(const char *path);
 
 
