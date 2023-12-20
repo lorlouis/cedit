@@ -4,6 +4,7 @@
 #include "str.h"
 #include "commands.h"
 
+#include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
@@ -29,6 +30,50 @@ struct View MESSAGE = {
         .no_line_num = 0,
     }
 };
+
+void message_clear(void) {
+    view_clear(&MESSAGE);
+    return;
+}
+
+int message_append(const char *fmt, ...) {
+    va_list args;
+    int ret;
+    va_start(args, fmt);
+    size_t s_size = 0;
+    char *formatted = 0;
+    ret = vasprintf(&formatted, fmt, args);
+    va_end(args);
+    if(ret < 0) {
+        return -1;
+    }
+    s_size = (size_t)ret;
+
+    view_write(&MESSAGE, formatted, s_size);
+    free(formatted);
+
+    return s_size;
+}
+
+int message_print(const char *fmt, ...) {
+    va_list args;
+    int ret;
+    va_start(args, fmt);
+    size_t s_size = 0;
+    char *formatted = 0;
+    ret = vasprintf(&formatted, fmt, args);
+    va_end(args);
+    if(ret < 0) {
+        return -1;
+    }
+    s_size = (size_t)ret;
+
+    view_clear(&MESSAGE);
+    view_write(&MESSAGE, formatted, s_size);
+    free(formatted);
+
+    return s_size;
+}
 
 FILE* filemode_open(
         enum FileMode fm,
@@ -88,6 +133,35 @@ int filemode_save(
     return 0;
 }
 
+// Returns -1 on error and sets errno
+int buffer_dump(
+        struct Buffer *buff,
+        char *path) {
+
+    if(buff->fm == FM_RO) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    FILE *f = fopen(path, "w");
+    if(!f) {
+        return -1;
+    }
+
+    for(size_t i = 0; i < buff->lines_len; i++) {
+        int ret = fprintf(f, "%s\n", str_as_cstr(buff->lines));
+        if(ret < 0) {
+            errno = ferror(f);
+            fclose(f);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
+// Returns -1 on error and sets errno
 int buffer_init_from_path(
         struct Buffer *buff,
         char *path,
@@ -129,7 +203,7 @@ int buffer_init_from_path(
     }
     fclose(f);
 
-    buff->in.ty = INPUTTY_FILE;
+    buff->in.ty = INPUT_FILE;
     buff->in.u.file.fm = fm;
     buff->in.u.file.path = str_from_cstr(path);
 
@@ -137,6 +211,7 @@ int buffer_init_from_path(
     buff->lines_cap = lines_cap;
     buff->lines_len = lines_len;
     buff->rc = 0;
+    buff->fm = fm;
 
     return 0;
 
@@ -145,6 +220,7 @@ int buffer_init_from_path(
             str_free(lines + i);
         }
         free(lines);
+        fclose(f);
         return -1;
 }
 
@@ -158,9 +234,9 @@ void buffer_cleanup(struct Buffer *buff) {
     }
 
     switch(buff->in.ty) {
-        case INPUTTY_SCRATCH:
+        case INPUT_SCRATCH:
             break;
-        case INPUTTY_FILE:
+        case INPUT_FILE:
             str_free(&buff->in.u.file.path);
             break;
     }
@@ -254,6 +330,8 @@ void view_free(struct View *v) {
 }
 
 int view_write(struct View *v, const char *restrict s, size_t len) {
+    if(len == 0) return 0;
+    v->buff->dirty = 1;
 
     size_t off = 0;
 
@@ -349,7 +427,7 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     ViewPort *real_vp = vp;
 
-    Style view_bg = style_new();
+    Style view_bg = v->style;
 
     Style num_text = style_fg(view_bg, colour_vt(VT_BLU));
 
@@ -590,7 +668,7 @@ int tabs_remove(int id) {
     return TABS.len;
 }
 
-int tabs_pop(struct Tab tab) {
+int tabs_pop(void) {
     vec_pop(&TABS, 0);
     if(ACTIVE_TAB >= TABS.len) {
         ACTIVE_TAB = TABS.len -1;
@@ -1053,16 +1131,12 @@ int window_handle_key(struct KeyEvent *e) {
 }
 
 int command_enter(void) {
-    buffer_cleanup(MESSAGE.buff);
-    MESSAGE.line_off = 0;
-    MESSAGE.view_cursor.off_x = 0;
-    MESSAGE.view_cursor.off_y = 0;
-    view_write(&MESSAGE, ":", 1);
+    message_print(":");
     return 0;
 }
 
 int command_leave(void) {
-    buffer_cleanup(MESSAGE.buff);
+    message_clear();
     return 0;
 }
 
@@ -1073,12 +1147,16 @@ int command_handle_key(struct KeyEvent *e) {
             mode_change(M_Normal);
             return 0;
         } else if(e->key == KC_BACKSPACE) {
-            view_erase(&MESSAGE);
+            // do not erase the leading ':'
+            if(MESSAGE.view_cursor.off_x > 1) {
+                view_erase(&MESSAGE);
+            }
             return 0;
         } else if(e->key == '\n') {
             if(MESSAGE.buff->lines) {
+                // TODO this only copies the first line
                 Str command = str_clone(MESSAGE.buff->lines);
-                view_clear(&MESSAGE);
+                message_clear();
                 // exec command will write into the message buffer
                 exec_command(str_as_cstr(&command));
                 str_free(&command);
@@ -1092,7 +1170,7 @@ int command_handle_key(struct KeyEvent *e) {
             char bytes[4] = {0};
             int len = utf32_to_utf8(e->key, bytes, 4);
             assert(len >= 1);
-            view_write(&MESSAGE, bytes, len);
+            message_append("%.*s", len, bytes);
         } break;
     }
     return 0;
@@ -1239,8 +1317,24 @@ void editor_quit(void) {
     return;
 }
 
+void editor_write(char *path) {
+    struct Tab *active_tab = tab_active();
+    struct Window *active_window = tab_window_active(active_tab);
+    struct View *active_view = window_view_active(active_window);
+
+    if(buffer_dump(active_view->buff, path)) {
+        char *error = strerror(errno);
+        message_print("Unable to write to '%s': %s", path, error);
+    } else {
+        message_print("OK");
+    }
+
+}
+
 void editor_init(void) {
     MESSAGE.buff = calloc(1, sizeof(struct Buffer));
+    MESSAGE.options.no_line_num = 1;
+    MESSAGE.style = style_bg(style_new(), colour_rgb(255, 150, 180));
 }
 
 void editor_teardown(void) {

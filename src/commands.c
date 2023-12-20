@@ -14,7 +14,7 @@ int exec_command(char *command) {
             RUNNING = 0;
             return 0;
         } else {
-            view_write(&MESSAGE, "E: unknown command", 18);
+            message_print("E: unknown command");
         }
     } while((token = strtok_r(NULL, sep, &last)));
     return 0;

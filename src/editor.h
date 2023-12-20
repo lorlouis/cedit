@@ -30,8 +30,8 @@ enum FileMode {
 
 struct Input {
     enum {
-        INPUTTY_SCRATCH,
-        INPUTTY_FILE,
+        INPUT_SCRATCH,
+        INPUT_FILE,
     } ty;
     union {
         int scratch:1;
@@ -67,7 +67,9 @@ struct Buffer {
     struct Input in;
     size_t lines_len;
     size_t lines_cap;
+    enum FileMode fm;
     Str *lines;
+    int dirty;
     size_t rc;
 };
 
@@ -125,11 +127,14 @@ struct View {
     struct ViewCursor view_cursor;
     struct Buffer *buff;
     struct ViewOpt options;
+    Style style;
     Maybe(ViewPort) vp;
 };
 
 // does not clone `buff`
 struct View view_new(struct Buffer *buff);
+
+void view_clear(struct View *v);
 
 struct View view_clone(struct View *v);
 
@@ -220,7 +225,7 @@ int tabs_next(void);
 
 int tabs_push(struct Tab tab);
 
-int tabs_pop(struct Tab tab);
+int tabs_pop(void);
 
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
 
@@ -234,10 +239,16 @@ int editor_render(struct winsize *ws);
 
 void editor_teardown(void);
 
+int message_append(const char *fmt, ...);
+
+int message_print(const char *fmt, ...);
+
 // editor actions
 
 void editor_quit_all(void);
 
 void editor_quit(void);
+
+
 
 #endif
