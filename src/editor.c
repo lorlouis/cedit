@@ -568,6 +568,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             v->line_off += line_off;
             // FIXME(louis) this is so ugly, the layout should be computed
             // first and then rendered
+            free(extra_render_line_per_line);
             return view_render(v, vp, ws, ac);
         }
         else {
