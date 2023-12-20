@@ -1,5 +1,5 @@
 ENTRYPOINT	= main.c
-SOURCE	= vt.c editor.c termkey.c xalloc.c str.c utf.c commands.c
+SOURCE	= vt.c editor.c termkey.c xalloc.c str.c utf.c commands.c config.c
 TEST_SOURCE	= test.c
 HEADER	=
 SRC_DIR = src

@@ -3,6 +3,7 @@
 #include "xalloc.h"
 #include "str.h"
 #include "commands.h"
+#include "config.h"
 
 #include <wordexp.h>
 #include <stdarg.h>
@@ -13,8 +14,6 @@
 #include <unistd.h>
 #include <wctype.h>
 #include <math.h>
-
-#define TAB_WIDTH 4
 
 struct winsize WS = {0};
 
@@ -273,11 +272,16 @@ int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
             // exit current style
             style_reset(fd);
 
-            style_fmt(&substitution, fd, "%s", ">---");
+            int tail_len = CONFIG.tab_width -1;
+            if(CONFIG.tab_width == 0) {
+                tail_len = 0;
+            }
+
+            style_fmt(&substitution, fd, "%*c%*c", CONFIG.tab_width > 0, '>', tail_len, '-');
             // go back to previous style
             style_begin(base_style, fd);
 
-            count += TAB_WIDTH;
+            count += CONFIG.tab_width;
         } else if (iswprint(wc)) {
             write(fd, str_tail_cstr(line, off), utf32_len_utf8(c));
             count += utf32_len_utf8(c);
@@ -468,7 +472,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
 
             if(char_off < str_len(&l)) {
                 Str tail = str_tail(&l, char_off);
-                len = take_cols(&tail, &take_width, TAB_WIDTH);
+                len = take_cols(&tail, &take_width, CONFIG.tab_width);
             } else {
                 take_width = 0;
             }
@@ -925,7 +929,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
 
             if(!str_is_empty(&tab_get(i)->name)) {
                 size_t cols = 10;
-                int len = take_cols(&tab_get(i)->name, &cols, TAB_WIDTH);
+                int len = take_cols(&tab_get(i)->name, &cols, CONFIG.tab_width);
                 assert(len >= 0 && "error when computing len");
                 dprintf(STDOUT_FILENO, "[%.*s]", len, str_as_cstr(&tab_get(i)->name));
                 sum+=cols+2;
@@ -939,7 +943,7 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
         } else {
             if(!str_is_empty(&tab_get(i)->name)) {
                 size_t cols = 10;
-                int len = take_cols(&tab_get(i)->name, &cols, TAB_WIDTH);
+                int len = take_cols(&tab_get(i)->name, &cols, CONFIG.tab_width);
                 assert(len >= 0 && "error when computing len");
                 dprintf(STDOUT_FILENO, " %.*s ", len, str_as_cstr(&tab_get(i)->name));
                 sum+=cols+2;
@@ -1040,8 +1044,24 @@ int view_erase(struct View *v) {
 
     Str *line = v->buff->lines + v->view_cursor.off_y;
     if(cursor > 0) {
-        str_remove(line, cursor-1, cursor-1);
-        v->view_cursor.off_x -= 1;
+        size_t start = cursor-1;
+        if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
+            _Bool is_a_tab = true;
+            utf32 c = 0;
+            for(int i = 0; i > CONFIG.tab_width; i++) {
+                str_get_char(line, cursor - i, &c);
+                if(c != L' ') {
+                    is_a_tab = false;
+                    break;
+                }
+            }
+            if(is_a_tab) {
+                start = cursor - CONFIG.tab_width;
+            }
+        }
+
+        str_remove(line, start, cursor-1);
+        v->view_cursor.off_x -= cursor - start;
     } else if(v->view_cursor.off_y > 0) {
         size_t cursor_line = v->view_cursor.off_y;
         Str *prev_line = v->buff->lines + v->view_cursor.off_y -1;
@@ -1066,6 +1086,10 @@ int insert_handle_key(struct KeyEvent *e) {
     if(e->key == '\e') {
         mode_change(M_Normal);
         return 0;
+    } else if(e->key == '\t' && CONFIG.use_spaces) {
+        for(int i = 0; i < CONFIG.tab_width; i++) {
+            view_write(v, " ", 1);
+        }
     } else if(e->key == KC_BACKSPACE) {
         view_erase(v);
         return 0;

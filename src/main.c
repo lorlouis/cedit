@@ -79,23 +79,6 @@ int handle_keys(void) {
     }
     if(ret == -1) return -1;
     return had_key;
-    /*
-    char buffer[32] = {0};
-    struct KeyEvent e = {0};
-    int had_key = 0;
-    int ret = 0;
-    while((ret = readkey(STDIN_FILENO, &e) > 0)) {
-        had_key = 1;
-
-        keyevent_fmt(&e, buffer, 32);
-        printf("%s\n", buffer);
-
-        memset(&e, 0, sizeof(struct KeyEvent));
-        memset(&buffer, 0, 32);
-    }
-    if(ret == -1) return -1;
-    return had_key;
-    */
 }
 
 int main(int argc, const char **argv) {

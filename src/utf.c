@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <locale.h>
 
+#include "config.h"
+
 #include "xalloc.h"
 
 int load_locale(void) {
@@ -142,7 +144,7 @@ int utf32_width(utf32 c) {
     if(width == -1) {
         switch(wc) {
             case L'\t':
-                return 4;
+                return CONFIG.tab_width;
             default:
                 assert(0 && "unknown variant");
         }
