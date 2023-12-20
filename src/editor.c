@@ -1310,29 +1310,48 @@ void editor_quit(void) {
     }
 }
 
-void editor_write(char *path) {
-    struct Tab *active_tab = tab_active();
-    struct Window *active_window = tab_window_active(active_tab);
-    struct View *active_view = window_view_active(active_window);
-
+int path_expand(char* path, char **out) {
     wordexp_t result;
 
     // expand path
     switch(wordexp(path, &result, WRDE_NOCMD)) {
         case WRDE_BADCHAR:
-            message_print("E: Invalid characters in path: %s", path);
-            return;
+            return WRDE_BADCHAR;
         default:
             break;
     }
 
-    if(buffer_dump(active_view->buff, *result.we_wordv)) {
-        char *error = strerror(errno);
-        message_print("E: Unable to write to '%s': %s", *result.we_wordv, error);
-    } else {
-        message_print("Written to '%s'", *result.we_wordv);
+    if(result.we_wordc == 0) {
+        size_t len = strlen(path);
+        *out = xcalloc(len+1, 1);
+        strcpy(*out, path);
+        return 0;
     }
+
+    size_t len = strlen(*result.we_wordv);
+    *out = xcalloc(len+1, 1);
+    strcpy(*out, *result.we_wordv);
     wordfree(&result);
+    return 0;
+}
+
+void editor_write(char *path) {
+    struct Tab *active_tab = tab_active();
+    struct Window *active_window = tab_window_active(active_tab);
+    struct View *active_view = window_view_active(active_window);
+
+    char *expanded = 0;
+    if(path_expand(path, &expanded)) {
+        message_print("E: invalid characters in path: '%s'", path);
+    }
+
+    if(buffer_dump(active_view->buff, expanded)) {
+        char *error = strerror(errno);
+        message_print("E: Unable to write to '%s': %s", expanded, error);
+    } else {
+        message_print("Written to '%s'", expanded);
+    }
+    xfree(expanded);
 }
 
 void editor_init(void) {

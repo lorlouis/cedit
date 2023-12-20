@@ -168,7 +168,6 @@ int main(int argc, const char **argv) {
 
     struct Window win = window_new();
     window_view_push(&win, view);
-    //window_view_push(&win, v2);
 
     struct Tab tab = {
         .name = NULL,
