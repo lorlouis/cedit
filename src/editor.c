@@ -4,6 +4,7 @@
 #include "str.h"
 #include "commands.h"
 
+#include <wordexp.h>
 #include <stdarg.h>
 #include <string.h>
 #include <assert.h>
@@ -33,7 +34,6 @@ struct View MESSAGE = {
 
 void message_clear(void) {
     view_clear(&MESSAGE);
-    return;
 }
 
 int message_append(const char *fmt, ...) {
@@ -149,7 +149,7 @@ int buffer_dump(
     }
 
     for(size_t i = 0; i < buff->lines_len; i++) {
-        int ret = fprintf(f, "%s\n", str_as_cstr(buff->lines));
+        int ret = fprintf(f, "%s\n", str_as_cstr(buff->lines + i));
         if(ret < 0) {
             errno = ferror(f);
             fclose(f);
@@ -241,7 +241,6 @@ void buffer_cleanup(struct Buffer *buff) {
             break;
     }
     memset(buff, 0, sizeof(struct Buffer));
-    return;
 }
 
 int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
@@ -747,7 +746,6 @@ void window_free(struct Window *w) {
     w->child = 0;
     w->active_view = 0;
     w->split_dir = 0;
-    return;
 }
 
 int window_render(struct Window *w, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
@@ -1291,7 +1289,6 @@ int editor_render(struct winsize *ws) {
 
 void editor_quit_all(void) {
     RUNNING = 0;
-    return;
 }
 
 void editor_quit(void) {
@@ -1299,22 +1296,18 @@ void editor_quit(void) {
     struct Window *active_window = tab_window_active(active_tab);
     window_close_view(active_window, -1);
 
-    if(active_window->view_stack.len > 0) {
-        return;
+    // remove the view
+    if(active_window->view_stack.len == 0) {
+        // if the window is empty, remove the window
+        if(tab_remove_window(active_tab, -1)) {
+            // if the tab is empty remove it
+            tabs_remove(-1);
+            // if all the tabs are removed, exit
+            if(TABS.len == 0) {
+                editor_quit_all();
+            }
+        }
     }
-
-    if(!tab_remove_window(active_tab, -1)) {
-        return;
-    }
-
-    tabs_remove(-1);
-
-    if(TABS.len > 0) {
-        return;
-    }
-
-    editor_quit_all();
-    return;
 }
 
 void editor_write(char *path) {
@@ -1322,23 +1315,32 @@ void editor_write(char *path) {
     struct Window *active_window = tab_window_active(active_tab);
     struct View *active_view = window_view_active(active_window);
 
-    if(buffer_dump(active_view->buff, path)) {
-        char *error = strerror(errno);
-        message_print("Unable to write to '%s': %s", path, error);
-    } else {
-        message_print("OK");
+    wordexp_t result;
+
+    // expand path
+    switch(wordexp(path, &result, WRDE_NOCMD)) {
+        case WRDE_BADCHAR:
+            message_print("E: Invalid characters in path: %s", path);
+            return;
+        default:
+            break;
     }
 
+    if(buffer_dump(active_view->buff, *result.we_wordv)) {
+        char *error = strerror(errno);
+        message_print("E: Unable to write to '%s': %s", *result.we_wordv, error);
+    } else {
+        message_print("Written to '%s'", *result.we_wordv);
+    }
+    wordfree(&result);
 }
 
 void editor_init(void) {
     MESSAGE.buff = calloc(1, sizeof(struct Buffer));
     MESSAGE.options.no_line_num = 1;
-    MESSAGE.style = style_bg(style_new(), colour_rgb(255, 150, 180));
 }
 
 void editor_teardown(void) {
     vec_cleanup(&TABS);
     view_free(&MESSAGE);
-    return;
 }

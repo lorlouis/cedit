@@ -249,6 +249,7 @@ void editor_quit_all(void);
 
 void editor_quit(void);
 
+void editor_write(char *path);
 
 
 #endif
