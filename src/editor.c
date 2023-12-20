@@ -907,7 +907,7 @@ int tabs_win_select(enum Direction dir) {
 
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     Style unselected = style_bg(style_new(), colour_vt(VT_GRA));
-    Style selected = style_bg(style_new(), colour_vt(VT_BLK));
+    Style selected = style_bg(style_new(), colour_none());
     selected = style_fg(selected, colour_vt(VT_BLU));
 
     size_t sum = 0;
