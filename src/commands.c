@@ -17,8 +17,14 @@ int exec_command(char *command) {
         RUNNING = 0;
         return 0;
     } else if(!strcmp(token, "w")) {
+        // a null token is fine
         token = strtok(NULL, sep);
         editor_write(token);
+        return 0;
+    } else if(!strcmp(token, "e")) {
+        // a null token is fine
+        token = strtok(NULL, sep);
+        editor_open(token, FM_RW);
         return 0;
     }
 

@@ -157,6 +157,7 @@ int buffer_dump(
         }
     }
 
+    fclose(f);
     return 0;
 }
 
@@ -164,7 +165,7 @@ int buffer_dump(
 // Returns -1 on error and sets errno
 int buffer_init_from_path(
         struct Buffer *buff,
-        char *path,
+        const char *path,
         enum FileMode fm) {
 
     errno = 0;
@@ -594,7 +595,7 @@ int buffer_rc_dec(struct Buffer *buff) {
     return 0;
 }
 
-struct Tab tab_new(struct Window w, char *name) {
+struct Tab tab_new(struct Window w, const char *name) {
     return (struct Tab) {
         .w = w,
         .active_window = 0,
@@ -903,11 +904,10 @@ int tabs_win_select(enum Direction dir) {
     return 0;
 }
 
-// TODO(louis) free tabs
-
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     Style unselected = style_bg(style_new(), colour_vt(VT_GRA));
     Style selected = style_bg(style_new(), colour_none());
+
     selected = style_fg(selected, colour_vt(VT_BLU));
 
     size_t sum = 0;
@@ -918,23 +918,35 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     style_begin(&unselected, STDOUT_FILENO);
     for(size_t i = 0; i < TABS.len; i++) {
         if(sum + 6 >= ws->ws_col) break;
+
         if(i == ACTIVE_TAB) {
             style_reset(STDOUT_FILENO);
             style_begin(&selected, STDOUT_FILENO);
-        }
-        if(!str_is_empty(&tab_get(i)->name)) {
-            size_t cols = 10;
-            int len = take_cols(&tab_get(i)->name, &cols, TAB_WIDTH);
-            assert(len >= 0 && "error when computing len");
-            dprintf(STDOUT_FILENO, "[%.*s]", len, str_as_cstr(&tab_get(i)->name));
-            sum+=cols+2;
-        } else {
-            dprintf(STDOUT_FILENO, "[%.4ld]", i);
-            sum+=6;
-        }
-        if(i == ACTIVE_TAB) {
+
+            if(!str_is_empty(&tab_get(i)->name)) {
+                size_t cols = 10;
+                int len = take_cols(&tab_get(i)->name, &cols, TAB_WIDTH);
+                assert(len >= 0 && "error when computing len");
+                dprintf(STDOUT_FILENO, "[%.*s]", len, str_as_cstr(&tab_get(i)->name));
+                sum+=cols+2;
+            } else {
+                dprintf(STDOUT_FILENO, "[%.4ld]", i);
+                sum+=6;
+            }
+
             style_reset(STDOUT_FILENO);
             style_begin(&unselected, STDOUT_FILENO);
+        } else {
+            if(!str_is_empty(&tab_get(i)->name)) {
+                size_t cols = 10;
+                int len = take_cols(&tab_get(i)->name, &cols, TAB_WIDTH);
+                assert(len >= 0 && "error when computing len");
+                dprintf(STDOUT_FILENO, " %.*s ", len, str_as_cstr(&tab_get(i)->name));
+                sum+=cols+2;
+            } else {
+                dprintf(STDOUT_FILENO, " %.4ld ", i);
+                sum+=6;
+            }
         }
     }
     style_reset(STDOUT_FILENO);
@@ -1310,7 +1322,7 @@ void editor_quit(void) {
     }
 }
 
-int path_expand(char* path, char **out) {
+int path_expand(const char* path, char **out) {
     wordexp_t result;
 
     // expand path
@@ -1335,14 +1347,38 @@ int path_expand(char* path, char **out) {
     return 0;
 }
 
-void editor_write(char *path) {
+void editor_write(const char *path) {
     struct Tab *active_tab = tab_active();
     struct Window *active_window = tab_window_active(active_tab);
     struct View *active_view = window_view_active(active_window);
 
+    const char *true_path = path;
+
+    switch(active_view->buff->in.ty) {
+        case INPUT_SCRATCH:
+            if(!path) {
+                message_print("E: scratch buffers do not have a pre-defined path");
+                return;
+            }
+            active_view->buff->in.ty = INPUT_FILE;
+            active_view->buff->in.u.file.path = str_from_cstr(path);
+            active_view->buff->in.u.file.fm = FM_RW;
+            break;
+        case INPUT_FILE:
+            if(!path) {
+                if(str_len(&active_view->buff->in.u.file.path)) {
+                    true_path = str_as_cstr(&active_view->buff->in.u.file.path);
+                } else {
+                    assert(0 && "files should always have a path");
+                }
+            }
+            break;
+    }
+
     char *expanded = 0;
-    if(path_expand(path, &expanded)) {
+    if(path_expand(true_path, &expanded)) {
         message_print("E: invalid characters in path: '%s'", path);
+        return;
     }
 
     if(buffer_dump(active_view->buff, expanded)) {
@@ -1354,9 +1390,48 @@ void editor_write(char *path) {
     xfree(expanded);
 }
 
+void editor_open(const char *path, enum FileMode fm) {
+    assert(path && "TODO reload file if it has a path");
+
+    struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+
+    char *expanded = 0;
+    if(path_expand(path, &expanded)) {
+        message_print("E: invalid characters in path: '%s'", path);
+        return;
+    }
+
+    if(buffer_init_from_path(buff, expanded, fm)) {
+        const char *error = strerror(errno);
+        message_print("E: Unable to open '%s': %s", expanded, error);
+        free(expanded);
+        return;
+    }
+
+    struct Tab *active_tab = tab_active();
+    struct Window *active_window = tab_window_active(active_tab);
+    struct View *active_view = window_view_active(active_window);
+
+    struct View new_view = view_new(buff);
+    view_free(active_view);
+    *active_view = new_view;
+
+    free(expanded);
+}
+
 void editor_init(void) {
     MESSAGE.buff = calloc(1, sizeof(struct Buffer));
     MESSAGE.options.no_line_num = 1;
+
+    if(TABS.len == 0) {
+        struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+        struct View view = view_new(buff);
+        struct Window win = window_new();
+        window_view_push(&win, view);
+        struct Tab tab = tab_new(win, 0);
+        tabs_push(tab);
+    }
+
 }
 
 void editor_teardown(void) {

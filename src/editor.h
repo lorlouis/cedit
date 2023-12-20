@@ -174,7 +174,7 @@ struct Tab {
     Str name;
 };
 
-struct Tab tab_new(struct Window w, char *name);
+struct Tab tab_new(struct Window w, const char *name);
 
 void tab_free(struct Tab *t);
 
@@ -200,7 +200,7 @@ int filemode_save(
 //  -1 on error and sets `errno`
 int buffer_init_from_path(
         struct Buffer *buff,
-        char *path,
+        const char *path,
         enum FileMode fm);
 
 // Frees the content of buffer
@@ -249,7 +249,9 @@ void editor_quit_all(void);
 
 void editor_quit(void);
 
-void editor_write(char *path);
+void editor_open(const char *path, enum FileMode fm);
+
+void editor_write(const char *path);
 
 
 #endif

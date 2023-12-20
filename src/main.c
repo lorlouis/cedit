@@ -100,7 +100,7 @@ int handle_keys(void) {
 
 int main(int argc, const char **argv) {
     // parse options
-    load_locale();
+    load_locale();    
 
     // register cleanup
     if(atexit(cleanup)) {
@@ -128,61 +128,27 @@ int main(int argc, const char **argv) {
 
     term_init();
 
-    struct Buffer *buff = calloc(1, sizeof(struct Buffer));
-    if(buffer_init_from_path(buff, "Makefile", FM_RW)) {
-        perror("unable to open file");
-        exit(1);
-    }
 
-    struct Buffer *buff2 = calloc(1, sizeof(struct Buffer));
-
-    struct View view = {
-        .buff = buff,
-        .line_off = 0,
-        .view_cursor = {
-            .off_x = 0,
-            .off_y = 0,
+    for(int i = 1; i < argc; i++) {
+        struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+        if(buffer_init_from_path(buff, argv[i], FM_RW)) {
+            editor_teardown();
+            free(buff);
+            perror("unable to open file");
+            exit(1);
         }
-    };
 
-
-    struct View v2 = {
-        .buff = buff2,
-        .line_off = 3,
-        .view_cursor = {
-            .off_x = 0,
-            .off_y = 0,
-        },
-        .vp = Some({
-            .height = 4,
-            .width = 32,
-            .off_x = 7,
-            .off_y = 10,
-        }),
-    };
+        struct View view = view_new(buff);
+        struct Window win = window_new();
+        window_view_push(&win, view);
+        struct Tab tab = tab_new(win, argv[i]);
+        tabs_push(tab);
+    }
 
     // switch to alternate
     alternate_buf_enter();
     // register hook to return to normal buffer on exit
     atexit(alternate_buf_leave);
-
-    struct Window win = window_new();
-    window_view_push(&win, view);
-
-    struct Tab tab = {
-        .name = NULL,
-        .w = win,
-        .active_window = 0,
-    };
-
-    struct Window w2 = window_new();
-    window_view_push(&w2, v2);
-
-    tabs_push(tab);
-
-    tabs_push(tab_new(window_clone(&win), 0));
-
-    tabs_push(tab_new(w2, 0));
 
     editor_init();
 
