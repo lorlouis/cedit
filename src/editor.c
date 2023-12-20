@@ -1049,7 +1049,7 @@ int view_erase(struct View *v) {
         if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
             _Bool is_a_tab = true;
             utf32 c = 0;
-            for(int i = 0; i > CONFIG.tab_width; i++) {
+            for(int i = 1; i <= CONFIG.tab_width; i++) {
                 str_get_char(line, cursor - i, &c);
                 if(c != L' ') {
                     is_a_tab = false;
@@ -1079,6 +1079,19 @@ int view_erase(struct View *v) {
         v->buff->lines_len -= 1;
         v->view_cursor.off_y -= 1;
     }
+    return 0;
+}
+
+
+int insert_enter(void) {
+    char line_cursor[] = CSI"5 q";
+    write(STDOUT_FILENO, line_cursor, sizeof(line_cursor)-1);
+    return 0;
+}
+
+int insert_leave(void) {
+    char block_cursor[] = CSI"1 q";
+    write(STDOUT_FILENO, block_cursor, sizeof(block_cursor)-1);
     return 0;
 }
 
@@ -1167,11 +1180,13 @@ int window_handle_key(struct KeyEvent *e) {
 
 int command_enter(void) {
     message_print(":");
+    insert_enter();
     return 0;
 }
 
 int command_leave(void) {
     message_clear();
+    insert_leave();
     return 0;
 }
 
@@ -1221,8 +1236,8 @@ static struct ModeInterface MODES[] = {
     (struct ModeInterface){
         .mode_str = "INS",
         .handle_key = insert_handle_key,
-        .on_enter = 0,
-        .on_leave = 0,
+        .on_enter = insert_enter,
+        .on_leave = insert_leave,
     },
     (struct ModeInterface){
         .mode_str = "WIN",

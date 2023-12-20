@@ -26,6 +26,10 @@ int exec_command(char *command) {
         token = strtok(NULL, sep);
         editor_open(token, FM_RW);
         return 0;
+    } else if(!strcmp(token, "tabnew")) {
+        // a null token is fine
+        token = strtok(NULL, sep);
+        
     }
 
     message_print("E: unknown command");
