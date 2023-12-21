@@ -91,47 +91,6 @@ FILE* filemode_open(
     return fopen(path, mode);
 }
 
-int filemode_save(
-        enum FileMode fm,
-        const char *path,
-        struct Buffer *buff) {
-
-    char *mode;
-
-    switch(fm) {
-        case FM_RW:
-            mode = "w+";
-            break;
-        case FM_RO:
-            errno = EBADF;
-            return -1;
-    }
-
-    FILE *f = fopen(path, mode);
-    if(!f) {
-        // errno is already set
-        return -1;
-    }
-
-    for(size_t i = 0; i < buff->lines_len; i++) {
-        Str line = buff->lines[i];
-        size_t ret = fwrite(str_as_cstr(&line), 1, str_cstr_len(&line), f);
-        if(ret != str_cstr_len(&line)) {
-            errno = ferror(f);
-            fclose(f);
-            return -1;
-        }
-        if(fwrite("\n", 1, 1, f) != 1) {
-            errno = ferror(f);
-            fclose(f);
-            return -1;
-        }
-    }
-
-    fclose(f);
-    return 0;
-}
-
 // Returns -1 on error and sets errno
 int buffer_dump(
         struct Buffer *buff,
@@ -417,6 +376,14 @@ void view_set_cursor(struct View *v, size_t x, size_t y) {
     Str *l = v->buff->lines + v->view_cursor.off_y;
 
     v->view_cursor.off_x = x < str_len(l) ? x : str_len(l);
+}
+
+void view_move_cursor_start(struct View *v) {
+    view_set_cursor(v, 0, v->view_cursor.off_y);
+}
+
+void view_move_cursor_end(struct View *v) {
+    view_set_cursor(v, SIZE_MAX, v->view_cursor.off_y);
 }
 
 void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
@@ -975,11 +942,27 @@ static enum Mode MODE = M_Normal;
 
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
-    struct Window *w = tab_active_window(tab_active());
-    struct Tab *t = tab_active();
 
     if(e->modifier == 0) {
         switch(e->key) {
+            case 'G': {
+                view_move_cursor(v, 0, SIZE_MAX);
+            } break;
+            case 'O': {
+                view_move_cursor_start(v);
+                view_write(v, "\n", sizeof("\n")-1);
+                view_move_cursor(v, 0, -1);
+            } break;
+            case 'o': {
+                view_move_cursor_end(v);
+                view_write(v, "\n", sizeof("\n")-1);
+            } break;
+            case '$': {
+                view_move_cursor_end(v);
+            } break;
+            case '0': {
+                view_move_cursor_start(v);
+            } break;
             case KC_ARRDOWN:
             case 'j': {
                 view_move_cursor(v, 0,+1);
