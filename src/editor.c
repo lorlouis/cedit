@@ -1325,7 +1325,6 @@ int editor_render(struct winsize *ws) {
         .row = 1,
     };
 
-    write(STDOUT_FILENO, CLS, sizeof(CLS));
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
 
