@@ -250,7 +250,6 @@ int str_insert_at(Str *s, size_t idx, const char *o, size_t len) {
 
     vec_grow_to_fit(&s->v, str_size(s) + len);
     size_t byte_idx = str_get_char_byte_idx(s, idx);
-    size_t overlap_size = str_size(s) - byte_idx;
     // move the overlapping part to the end of the line
     memmove(s->v.buf + byte_idx + len, s->v.buf + byte_idx, str_size(s) - byte_idx);
     // copy o into the overlap

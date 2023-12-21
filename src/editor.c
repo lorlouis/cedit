@@ -975,6 +975,9 @@ static enum Mode MODE = M_Normal;
 
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
+    struct Window *w = tab_active_window(tab_active());
+    struct Tab *t = tab_active();
+
     if(e->modifier == 0) {
         switch(e->key) {
             case KC_ARRDOWN:
@@ -1004,6 +1007,14 @@ int normal_handle_key(struct KeyEvent *e) {
         }
     } else if (e->modifier == KM_Ctrl) {
         switch(e->key) {
+            case 'e': {
+                if(v->line_off < v->buff->lines_len-1) {
+                    if(v->view_cursor.off_y == v->line_off) {
+                        v->view_cursor.off_y += 1;
+                    }
+                    v->line_off += 1;
+                }
+            } break;
             case KC_ARRLEFT:
             case 'h': {
                 tabs_prev();
@@ -1081,7 +1092,6 @@ int view_erase(struct View *v) {
     }
     return 0;
 }
-
 
 int insert_enter(void) {
     char line_cursor[] = CSI"5 q";
@@ -1319,6 +1329,7 @@ int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
 
 int editor_render(struct winsize *ws) {
     if(!RUNNING) return 0;
+    write(STDOUT_FILENO, CUR_HIDE, sizeof(CUR_HIDE) -1);
 
     struct AbsoluteCursor ac = {
         .col = 1,
@@ -1329,11 +1340,18 @@ int editor_render(struct winsize *ws) {
     if(active_line_render(ws)) return -1;
 
     if(MESSAGE.buff->lines && MODE == M_Command) {
-        if(message_line_render(ws, &ac)) return -1;
+        if(message_line_render(ws, &ac)) {
+            write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
+            return -1;
+        }
     } else {
-        if(message_line_render(ws, 0)) return -1;
+        if(message_line_render(ws, 0)) {
+            write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
+            return -1;
+        }
     }
     set_cursor_pos(ac.col, ac.row);
+    write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
     return 0;
 }
 
@@ -1498,7 +1516,6 @@ void editor_init(void) {
         struct Tab tab = tab_new(win, 0);
         tabs_push(tab);
     }
-
 }
 
 void editor_teardown(void) {
