@@ -104,11 +104,13 @@ void vec_remove(Vec *v, size_t idx) {
 int vec_insert(Vec *v, size_t idx, void *data) {
     assert(v->cap != SIZE_MAX && "vec is readonly");
     if(idx > v->len) return -EINVAL;
+
     if(idx == v->len) {
         vec_push(v, data);
         return 0;
     }
     vec_grow_to_fit(v, v->len + 1);
+    v->len += 1;
     memmove(vec_get(v, idx+1), vec_get(v, idx), v->type_size * (v->len - idx));
     memmove(vec_get(v, idx), data, v->type_size);
     return 0;
@@ -379,7 +381,7 @@ Str str_head(const Str *s, size_t idx) {
         char_pos.cap = SIZE_MAX;
     }
 
-    if(idx == str_len(s)+1) {
+    if(idx == str_len(s)+1 || (str_len(s) == 0 && idx == 0)) {
         return (Str) {
             .v = v,
             .char_pos = char_pos,

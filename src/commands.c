@@ -30,6 +30,14 @@ int exec_command(char *command) {
         // a null token is fine
         token = strtok(NULL, sep);
         editor_tabnew(token, FM_RW);
+    } else if(!strcmp(token, "split")) {
+        // a null token is fine
+        token = strtok(NULL, sep);
+        editor_split_open(token, FM_RW, SD_Vertical);
+    } else if(!strcmp(token, "hsplit")) {
+        // a null token is fine
+        token = strtok(NULL, sep);
+        editor_split_open(token, FM_RW, SD_Horizontal);
     }
 
     message_print("E: unknown command");

@@ -71,13 +71,15 @@ struct Line {
 // Null initialise {0} to get a scratch buffer
 struct Buffer {
     struct Input in;
-    size_t lines_len;
-    size_t lines_cap;
     enum FileMode fm;
-    struct Line *lines;
+    Vec lines;
     int dirty;
     size_t rc;
 };
+
+struct Line *buffer_line_get(struct Buffer *buff, size_t idx);
+
+int buffer_line_insert(struct Buffer *buff, size_t idx, struct Line line);
 
 // increases the count and returns the data
 // Returns
@@ -261,6 +263,8 @@ void editor_quit(void);
 void editor_open(const char *path, enum FileMode fm);
 
 void editor_tabnew(const char *path, enum FileMode fm);
+
+void editor_split_open(const char *path, enum FileMode fm, enum SplitDir split);
 
 void editor_write(const char *path);
 
