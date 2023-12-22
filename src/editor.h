@@ -47,6 +47,7 @@ enum Mode {
     M_Insert = 1,
     M_Window = 2,
     M_Command = 3,
+    M_Visual = 4,
 };
 
 struct ModeInterface {
@@ -62,13 +63,18 @@ int mode_change(enum Mode mode);
 
 typedef void (cleanup_fn)(void *data);
 
+struct Line {
+    Str text;
+    size_t render_width;
+};
+
 // Null initialise {0} to get a scratch buffer
 struct Buffer {
     struct Input in;
     size_t lines_len;
     size_t lines_cap;
     enum FileMode fm;
-    Str *lines;
+    struct Line *lines;
     int dirty;
     size_t rc;
 };
@@ -103,6 +109,8 @@ enum MaybeVariant {
 #define is_none(m) ((m).o == None)
 #define as_ptr(m) ((m).o == Some ? &m.u.some : 0)
 #define Some(...) {.o = Some, .u.some = __VA_ARGS__ }
+#define set_some(v, ...) {(v)->o = Some; (v)->u.some = __VA_ARGS__; }
+#define set_none(v) {(v)->o = None;}
 
 // View Port is computed in absolute screen coordinates
 typedef struct {
@@ -113,10 +121,10 @@ typedef struct {
     uint16_t off_y;
 } ViewPort;
 
-struct ViewCursor {
+typedef struct ViewCursor {
     size_t off_x;
     size_t off_y;
-};
+} ViewCursor;
 
 struct ViewOpt {
     int no_line_num;
@@ -129,6 +137,7 @@ struct View {
     struct ViewOpt options;
     Style style;
     Maybe(ViewPort) vp;
+    Maybe(ViewCursor) selection_end;
 };
 
 // does not clone `buff`

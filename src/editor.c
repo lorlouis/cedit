@@ -31,6 +31,45 @@ struct View MESSAGE = {
     }
 };
 
+// len in character idx
+size_t render_width(Str *s, size_t len) {
+    Str head = str_head(s, len);
+    size_t width = 0;
+    for(size_t i = 0; i < str_len(&head); i++) {
+        utf32 c = 0;
+        assert(!str_get_char(&head, i, &c));
+        width += utf32_width(c);
+    }
+    return width;
+}
+
+struct Line line_from_cstr(char *s) {
+    Str str = str_from_cstr(s);
+    return (struct Line) {
+        .render_width = render_width(&str, str_len(&str)),
+        .text = str,
+    };
+}
+
+int line_insert_at(struct Line *l, size_t idx, const char *s, size_t len) {
+    int ret = str_insert_at(&l->text, idx, s, len);
+    l->render_width = render_width(&l->text, str_len(&l->text));
+    return ret;
+}
+
+void line_trunk(struct Line *l, size_t idx) {
+    //Str tail = str_tail(&l->text, idx);
+    //size_t trunked_width = render_width(&tail, str_len(&tail));
+    str_trunc(&l->text, idx);
+    //l->render_width -= trunked_width;
+}
+
+int line_append(struct Line *l, const char *s, size_t len) {
+    int ret = str_push(&l->text, s, len);
+    l->render_width = render_width(&l->text, str_len(&l->text));
+    return ret;
+}
+
 void message_clear(void) {
     view_clear(&MESSAGE);
 }
@@ -107,7 +146,7 @@ int buffer_dump(
     }
 
     for(size_t i = 0; i < buff->lines_len; i++) {
-        int ret = fprintf(f, "%s\n", str_as_cstr(buff->lines + i));
+        int ret = fprintf(f, "%s\n", str_as_cstr(&buff->lines[i].text));
         if(ret < 0) {
             errno = ferror(f);
             fclose(f);
@@ -130,7 +169,7 @@ int buffer_init_from_path(
     FILE *f = filemode_open(fm, path);
     if(!f) return -1;
 
-    Str *lines = 0;
+    struct Line *lines = 0;
     size_t lines_cap = 0;
     size_t lines_len = 0;
 
@@ -142,7 +181,7 @@ int buffer_init_from_path(
         if(lines_len >= lines_cap) {
             // TODO(louis) check for overflow
             lines_cap = lines_cap ? lines_cap * 2 : 1;
-            lines = xrealloc(lines, lines_cap * sizeof(Str));
+            lines = xrealloc(lines, lines_cap * sizeof(struct Line));
         }
 
         if(line[len-1] == '\n') {
@@ -150,7 +189,7 @@ int buffer_init_from_path(
             len-=1;
         }
 
-        lines[lines_len] = str_from_cstr_len(line, len+1);
+        lines[lines_len].text = str_from_cstr_len(line, len+1);
 
         lines_len += 1;
     }
@@ -176,7 +215,7 @@ int buffer_init_from_path(
 
     err:
         for(size_t i = 0; i < lines_len; i++) {
-            str_free(lines + i);
+            str_free(&lines[i].text);
         }
         free(lines);
         fclose(f);
@@ -187,7 +226,7 @@ int buffer_init_from_path(
 void buffer_cleanup(struct Buffer *buff) {
     if(buff->lines) {
         for(size_t i = 0; i < buff->lines_len; i++) {
-            str_free(buff->lines + i);
+            str_free(&buff->lines[i].text);
         }
         free(buff->lines);
     }
@@ -202,14 +241,17 @@ void buffer_cleanup(struct Buffer *buff) {
     memset(buff, 0, sizeof(struct Buffer));
 }
 
-int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
+int write_escaped(Style *base_style, const Str *line, size_t len) {
+
     size_t off = 0;
     int count = 0;
+
     Style substitution = style_new();
     if(base_style) {
         substitution = style_fg(*base_style, colour_vt(VT_GRA));
     }
-    style_begin(base_style, fd);
+
+    style_begin(base_style, STDOUT_FILENO);
     while(off < len) {
         utf32 c = 0;
         assert(str_get_char(line, off, &c) != -1);
@@ -217,7 +259,7 @@ int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
         wint_t wc = utf32_to_wint(c);
         if(wc == L'\n' || wc == 0) break;
         if(wc == (wint_t)-1) {
-            style_reset(fd);
+            style_reset(STDOUT_FILENO);
             return -1;
         }
 
@@ -229,25 +271,25 @@ int write_escaped(Style *base_style, int fd, const Str *line, size_t len) {
             style = style_fg(style, colour_vt(VT_GRA));
 
             // exit current style
-            style_reset(fd);
+            style_reset(STDOUT_FILENO);
 
             int tail_len = CONFIG.tab_width -1;
             if(CONFIG.tab_width == 0) {
                 tail_len = 0;
             }
 
-            style_fmt(&substitution, fd, "%*c%*c", CONFIG.tab_width > 0, '>', tail_len, '-');
+            style_fmt(&substitution, STDOUT_FILENO, "%*c%*c", CONFIG.tab_width > 0, '>', tail_len, '-');
             // go back to previous style
-            style_begin(base_style, fd);
+            style_begin(base_style, STDOUT_FILENO);
 
             count += CONFIG.tab_width;
         } else if (iswprint(wc)) {
-            write(fd, str_tail_cstr(line, off), utf32_len_utf8(c));
+            write(STDOUT_FILENO, str_tail_cstr(line, off), utf32_len_utf8(c));
             count += utf32_len_utf8(c);
         }
         off += 1;
     }
-    style_reset(fd);
+    style_reset(STDOUT_FILENO);
     return count;
 }
 
@@ -284,7 +326,7 @@ void view_clear(struct View *v) {
     v->view_cursor.off_x = 0;
     v->view_cursor.off_y = 0;
     for(size_t i = 0; i < v->buff->lines_len; i++) {
-        str_clear(v->buff->lines + i);
+        str_clear(&v->buff->lines[i].text);
     }
 }
 
@@ -301,45 +343,45 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
     size_t line_idx = v->view_cursor.off_y;
 
     if(!v->buff->lines) {
-        v->buff->lines = calloc(1, sizeof(Str));
+        v->buff->lines = calloc(1, sizeof(struct Line));
         v->buff->lines_cap = 1;
         v->buff->lines_len = 1;
     }
 
-    Str *line = v->buff->lines + line_idx;
+    struct Line *line = v->buff->lines + line_idx;
     char *end_of_line = 0;
     size_t end_of_line_size = 0;
     size_t source_line = v->view_cursor.off_y;
 
     // save end of line and null terminator
-    end_of_line_size = str_cstr_len(line) - str_get_char_byte_idx(line, v->view_cursor.off_x);
+    end_of_line_size = str_cstr_len(&line->text) - str_get_char_byte_idx(&line->text, v->view_cursor.off_x);
     end_of_line = xcalloc(end_of_line_size, sizeof(char));
 
-    memcpy(end_of_line, str_as_cstr(line) + str_get_char_byte_idx(line, v->view_cursor.off_x), end_of_line_size);
+    memcpy(end_of_line, str_as_cstr(&line->text) + str_get_char_byte_idx(&line->text, v->view_cursor.off_x), end_of_line_size);
 
     while(off < len) {
         size_t start = off;
         while(s[off] != '\n' && s[off] != '\0') off++;
         size_t size = off - start;
-        size_t cursor = str_get_char_byte_idx(line, v->view_cursor.off_x);
+        size_t cursor = str_get_char_byte_idx(&line->text, v->view_cursor.off_x);
 
-        size_t original_len = str_len(line);
+        size_t original_len = str_len(&line->text);
 
         // copy the new block on top of the old stuff
-        str_insert_at(line, v->view_cursor.off_x, s + start, size);
+        line_insert_at(line, v->view_cursor.off_x, s + start, size);
 
-        size_t new_len = str_len(line);
+        size_t new_len = str_len(&line->text);
 
         v->view_cursor.off_x += new_len - original_len;
 
         if(s[off] == '\n') {
-            if(cursor <= str_len(line)) {
-                str_trunc(line, cursor);
+            if(cursor <= str_len(&line->text)) {
+                line_trunk(line, cursor);
             }
             off++;
             // add 1 more line
             if(1+v->buff->lines_len >= v->buff->lines_cap) {
-                v->buff->lines = xrealloc(v->buff->lines, v->buff->lines_cap * 2 * sizeof(Str));
+                v->buff->lines = xrealloc(v->buff->lines, v->buff->lines_cap * 2 * sizeof(struct Line));
                 v->buff->lines_cap = v->buff->lines_cap * 2;
             }
 
@@ -347,12 +389,14 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
             // shift the lines 1 down
             memmove(v->buff->lines + line_cursor + 1,
                     v->buff->lines + line_cursor,
-                    (v->buff->lines_len - line_cursor) * sizeof(Str));
+                    (v->buff->lines_len - line_cursor) * sizeof(struct Line));
 
             v->buff->lines_len += 1;
 
             line = v->buff->lines + line_cursor+1;
-            *line = str_new();
+
+            line->text = str_new();
+            // TODO set render width
 
             v->view_cursor.off_y += 1;
 
@@ -363,7 +407,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         // write end of line at the end of the current cursor line
         // if the line changed
         if(source_line != v->view_cursor.off_y) {
-            str_push(line, end_of_line, end_of_line_size);
+            line_append(line, end_of_line, end_of_line_size);
         }
     }
     free(end_of_line);
@@ -373,9 +417,13 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
 void view_set_cursor(struct View *v, size_t x, size_t y) {
     if(!v->buff || !v->buff->lines) return;
     v->view_cursor.off_y = y < v->buff->lines_len ? y : v->buff->lines_len-1;
-    Str *l = v->buff->lines + v->view_cursor.off_y;
+    struct Line *l = v->buff->lines + v->view_cursor.off_y;
 
-    v->view_cursor.off_x = x < str_len(l) ? x : str_len(l);
+    v->view_cursor.off_x = x < str_len(&l->text) ? x : str_len(&l->text);
+}
+
+struct ViewCursor view_get_cursor(struct View *v) {
+    return v->view_cursor;
 }
 
 void view_move_cursor_start(struct View *v) {
@@ -395,6 +443,8 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
     view_set_cursor(v, new_x, new_y);
 }
 
+
+// TODO(louis) rewrite this. I hate it
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     ViewPort *real_vp = vp;
 
@@ -429,7 +479,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
     for(;
             i + v->line_off < v->buff->lines_len && i + line_off < real_height;
             i++) {
-        Str l = v->buff->lines[i+v->line_off];
+        struct Line l = v->buff->lines[i+v->line_off];
 
         size_t char_off = 0;
         size_t extra_render_line_count = 0;
@@ -437,8 +487,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             ssize_t len = 0;
             size_t take_width = real_width - num_width;
 
-            if(char_off < str_len(&l)) {
-                Str tail = str_tail(&l, char_off);
+            if(char_off < str_len(&l.text)) {
+                Str tail = str_tail(&l.text, char_off);
                 len = take_cols(&tail, &take_width, CONFIG.tab_width);
             } else {
                 take_width = 0;
@@ -458,16 +508,18 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
                     );
             }
 
-            Str tail = str_tail(&l, char_off);
-            write_escaped(&view_bg, STDOUT_FILENO, &tail, len);
+            Str tail = str_tail(&l.text, char_off);
+
+            write_escaped(&view_bg, &tail, len);
+
             // fill the rest of the line, useful when views overlap
             int fill = real_width-take_width-num_width;
             if(fill) {
-                style_fmt(&view_bg, STDERR_FILENO, "%*s", fill, " ");
+                style_fmt(&view_bg, STDOUT_FILENO, "%*s", fill, " ");
             }
 
             // reached the end of the line
-            if((size_t)len + char_off >= str_len(&l)) break;
+            if((size_t)len + char_off >= str_len(&l.text)) break;
 
             char_off += len;
             extra_render_line_count += 1;
@@ -502,8 +554,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
     }
 
     if(ac && v->buff->lines) {
-        Str *line = v->buff->lines + v->view_cursor.off_y;
-        Str line_until_col = str_head(line, v->view_cursor.off_x+1);
+        struct Line *line = v->buff->lines + v->view_cursor.off_y;
+        Str line_until_col = str_head(&line->text, v->view_cursor.off_x + 1);
         uint16_t col = count_cols(&line_until_col, 4);
         assert(col != (uint16_t)-1);
         uint16_t row = v->view_cursor.off_y - v->line_off + cursor_line_off;
@@ -513,7 +565,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             size_t len = 0;
             while(diff >= 0) {
                 size_t take_width = real_vp->width - num_width;
-                Str tail = str_tail(line, len);
+                Str tail = str_tail(&line->text, len);
                 Str tail_head = str_head(&tail, v->view_cursor.off_x - len + 1);
                 //size_t new_len = take_cols(str_as_cstr(line) + len, v->view_cursor.off_x - len, &take_width, 4);
                 size_t new_len = take_cols(&tail_head, &take_width, 4);
@@ -598,7 +650,7 @@ int tab_remove_window(struct Tab *t, int id) {
         parent->child = current->child;
         window_free(current);
         free(current);
-        if(t->active_window >= idx && t->active_window >= 0) {
+        if(t->active_window >= idx) {
             t->active_window -= 1;
         }
     } else {
@@ -937,6 +989,86 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
     return 0;
 }
 
+// does not clone `buff`
+struct View view_new(struct Buffer *buff) {
+    return (struct View) {
+        .line_off = 0,
+        .view_cursor = {0},
+        .buff = buff,
+        .options = {0},
+        .vp = {0},
+    };
+}
+
+struct View view_clone(struct View *v) {
+    struct View view = *v;
+    buffer_rc_inc(view.buff);
+    return view;
+}
+
+int view_erase(struct View *v) {
+    size_t cursor = v->view_cursor.off_x;
+
+    struct Line *line = v->buff->lines + v->view_cursor.off_y;
+    if(cursor > 0) {
+        size_t start = cursor-1;
+        if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
+            _Bool is_a_tab = true;
+            utf32 c = 0;
+            for(int i = 1; i <= CONFIG.tab_width; i++) {
+                str_get_char(&line->text, cursor - i, &c);
+                if(c != L' ') {
+                    is_a_tab = false;
+                    break;
+                }
+            }
+            if(is_a_tab) {
+                start = cursor - CONFIG.tab_width;
+            }
+        }
+
+        str_remove(&line->text, start, cursor-1);
+        v->view_cursor.off_x -= cursor - start;
+    } else if(v->view_cursor.off_y > 0) {
+        size_t cursor_line = v->view_cursor.off_y;
+        struct Line *prev_line = v->buff->lines + v->view_cursor.off_y -1;
+        // move cursor to end of previous line
+        v->view_cursor.off_x = str_len(&prev_line->text);
+        str_push(&prev_line->text, str_as_cstr(&line->text), str_cstr_len(&line->text));
+
+        if(cursor_line+1 <= v->buff->lines_len) {
+            str_free(&line->text);
+            memmove(v->buff->lines + cursor_line,
+                    v->buff->lines + cursor_line+1,
+                    (v->buff->lines_len - cursor_line) * sizeof(struct Line));
+        }
+        v->buff->lines_len -= 1;
+        v->view_cursor.off_y -= 1;
+    }
+    return 0;
+}
+
+void view_next(void) {
+    struct Tab *cur_tab = tab_active();
+    struct Window *cw = tab_window_active(cur_tab);
+    if(cw->view_stack.len > 0 && cw->active_view < cw->view_stack.len-1) {
+        cw->active_view += 1;
+    } else {
+        cw->active_view = 0;
+    }
+}
+
+void view_prev(void) {
+    struct Tab *cur_tab = tab_active();
+    struct Window *cw = tab_window_active(cur_tab);
+    if(cw->active_view > 0) {
+        cw->active_view -= 1;
+    } else if(cw->view_stack.len > 0){
+        cw->active_view = cw->view_stack.len-1;
+    }
+}
+
+
 // DO NOT USE DIRECTLY, use mode_* functions
 static enum Mode MODE = M_Normal;
 
@@ -956,6 +1088,9 @@ int normal_handle_key(struct KeyEvent *e) {
             case 'o': {
                 view_move_cursor_end(v);
                 view_write(v, "\n", sizeof("\n")-1);
+            } break;
+            case 'v': {
+                mode_change(M_Visual);
             } break;
             case '$': {
                 view_move_cursor_end(v);
@@ -1017,65 +1152,6 @@ int normal_handle_key(struct KeyEvent *e) {
     return 0;
 }
 
-// does not clone `buff`
-struct View view_new(struct Buffer *buff) {
-    return (struct View) {
-        .line_off = 0,
-        .view_cursor = {0},
-        .buff = buff,
-        .options = {0},
-        .vp = {0},
-    };
-}
-
-struct View view_clone(struct View *v) {
-    struct View view = *v;
-    buffer_rc_inc(view.buff);
-    return view;
-}
-
-int view_erase(struct View *v) {
-    size_t cursor = v->view_cursor.off_x;
-
-    Str *line = v->buff->lines + v->view_cursor.off_y;
-    if(cursor > 0) {
-        size_t start = cursor-1;
-        if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
-            _Bool is_a_tab = true;
-            utf32 c = 0;
-            for(int i = 1; i <= CONFIG.tab_width; i++) {
-                str_get_char(line, cursor - i, &c);
-                if(c != L' ') {
-                    is_a_tab = false;
-                    break;
-                }
-            }
-            if(is_a_tab) {
-                start = cursor - CONFIG.tab_width;
-            }
-        }
-
-        str_remove(line, start, cursor-1);
-        v->view_cursor.off_x -= cursor - start;
-    } else if(v->view_cursor.off_y > 0) {
-        size_t cursor_line = v->view_cursor.off_y;
-        Str *prev_line = v->buff->lines + v->view_cursor.off_y -1;
-        // move cursor to end of previous line
-        v->view_cursor.off_x = str_len(prev_line);
-        str_push(prev_line, str_as_cstr(line), str_cstr_len(line));
-
-        if(cursor_line+1 <= v->buff->lines_len) {
-            str_free(line);
-            memmove(v->buff->lines + cursor_line,
-                    v->buff->lines + cursor_line+1,
-                    (v->buff->lines_len - cursor_line) * sizeof(Str));
-        }
-        v->buff->lines_len -= 1;
-        v->view_cursor.off_y -= 1;
-    }
-    return 0;
-}
-
 int insert_enter(void) {
     char line_cursor[] = CSI"5 q";
     write(STDOUT_FILENO, line_cursor, sizeof(line_cursor)-1);
@@ -1107,26 +1183,6 @@ int insert_handle_key(struct KeyEvent *e) {
     }
 
     return 0;
-}
-
-void view_next(void) {
-    struct Tab *cur_tab = tab_active();
-    struct Window *cw = tab_window_active(cur_tab);
-    if(cw->view_stack.len > 0 && cw->active_view < cw->view_stack.len-1) {
-        cw->active_view += 1;
-    } else {
-        cw->active_view = 0;
-    }
-}
-
-void view_prev(void) {
-    struct Tab *cur_tab = tab_active();
-    struct Window *cw = tab_window_active(cur_tab);
-    if(cw->active_view > 0) {
-        cw->active_view -= 1;
-    } else if(cw->view_stack.len > 0){
-        cw->active_view = cw->view_stack.len-1;
-    }
 }
 
 int window_handle_key(struct KeyEvent *e) {
@@ -1197,7 +1253,7 @@ int command_handle_key(struct KeyEvent *e) {
         } else if(e->key == '\n') {
             if(MESSAGE.buff->lines) {
                 // TODO this only copies the first line
-                Str command = str_clone(MESSAGE.buff->lines);
+                Str command = str_clone(&MESSAGE.buff->lines->text);
                 message_clear();
                 // exec command will write into the message buffer
                 exec_command(str_as_cstr(&command));
@@ -1214,6 +1270,49 @@ int command_handle_key(struct KeyEvent *e) {
             assert(len >= 1);
             message_append("%.*s", len, bytes);
         } break;
+    }
+    return 0;
+}
+
+int visual_enter(void) {
+    struct View *v = tab_active_view(tab_active());
+    set_some(&v->selection_end, view_get_cursor(v));
+    return 0;
+}
+
+int visual_leave(void) {
+    struct View *v = tab_active_view(tab_active());
+    set_none(&v->selection_end);
+    return 0;
+}
+
+int visual_handle_key(struct KeyEvent *e) {
+    struct View *v = tab_active_view(tab_active());
+    assert(is_some(v->selection_end));
+
+    if(e->modifier == 0) {
+        switch(e->key) {
+            case '\e':
+                mode_change(M_Normal);
+                return 0;
+
+            case KC_ARRDOWN:
+            case 'j': {
+                view_move_cursor(v, 0,+1);
+            } break;
+            case KC_ARRUP:
+            case 'k': {
+                view_move_cursor(v, 0,-1);
+            } break;
+            case KC_ARRLEFT:
+            case 'h': {
+                view_move_cursor(v, -1,0);
+            } break;
+            case KC_ARRRIGHT:
+            case 'l': {
+                view_move_cursor(v, +1,0);
+            } break;
+        }
     }
     return 0;
 }
@@ -1242,6 +1341,12 @@ static struct ModeInterface MODES[] = {
         .handle_key = command_handle_key,
         .on_enter = command_enter,
         .on_leave = command_leave,
+    },
+    (struct ModeInterface){
+        .mode_str = "VIS",
+        .handle_key = visual_handle_key,
+        .on_enter = visual_enter,
+        .on_leave = visual_leave,
     },
 };
 
