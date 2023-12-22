@@ -51,6 +51,14 @@ struct Line line_from_cstr(char *s) {
     };
 }
 
+struct Line line_new(void) {
+    return (struct Line){0};
+}
+
+void line_free(struct Line *l) {
+    str_free(&l->text);
+}
+
 int line_insert_at(struct Line *l, size_t idx, const char *s, size_t len) {
     int ret = str_insert_at(&l->text, idx, s, len);
     l->render_width = render_width(&l->text, str_len(&l->text));
@@ -58,10 +66,10 @@ int line_insert_at(struct Line *l, size_t idx, const char *s, size_t len) {
 }
 
 void line_trunk(struct Line *l, size_t idx) {
-    //Str tail = str_tail(&l->text, idx);
-    //size_t trunked_width = render_width(&tail, str_len(&tail));
+    Str tail = str_tail(&l->text, idx);
+    size_t trunked_width = render_width(&tail, str_len(&tail));
     str_trunc(&l->text, idx);
-    //l->render_width -= trunked_width;
+    l->render_width -= trunked_width;
 }
 
 int line_append(struct Line *l, const char *s, size_t len) {
@@ -215,7 +223,7 @@ int buffer_init_from_path(
 
     err:
         for(size_t i = 0; i < lines_len; i++) {
-            str_free(&lines[i].text);
+            line_free(lines + i);
         }
         free(lines);
         fclose(f);
@@ -226,7 +234,7 @@ int buffer_init_from_path(
 void buffer_cleanup(struct Buffer *buff) {
     if(buff->lines) {
         for(size_t i = 0; i < buff->lines_len; i++) {
-            str_free(&buff->lines[i].text);
+            line_free(buff->lines + i);
         }
         free(buff->lines);
     }
@@ -395,8 +403,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
 
             line = v->buff->lines + line_cursor+1;
 
-            line->text = str_new();
-            // TODO set render width
+            *line = line_new();
 
             v->view_cursor.off_y += 1;
 
@@ -1037,7 +1044,7 @@ int view_erase(struct View *v) {
         str_push(&prev_line->text, str_as_cstr(&line->text), str_cstr_len(&line->text));
 
         if(cursor_line+1 <= v->buff->lines_len) {
-            str_free(&line->text);
+            line_free(line);
             memmove(v->buff->lines + cursor_line,
                     v->buff->lines + cursor_line+1,
                     (v->buff->lines_len - cursor_line) * sizeof(struct Line));
