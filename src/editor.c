@@ -459,8 +459,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
 
     Style num_text = style_fg(view_bg, colour_vt(VT_BLU));
 
-    if(is_some(v->vp)) {
-        real_vp = as_ptr(v->vp);
+    if(v->viewport_locked) {
+        real_vp = &v->vp;
     }
 
     uint16_t real_width = viewport_viewable_width(real_vp, ws);
@@ -488,7 +488,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
     for(;
             i + v->line_off < v->buff->lines.len && i + line_off < real_height;
             i++) {
-        struct Line *l = buffer_line_get(v->buff, i+line_off);
+        struct Line *l = buffer_line_get(v->buff, i+line_off+v->line_off);
 
         size_t char_off = 0;
         size_t extra_render_line_count = 0;
@@ -657,13 +657,18 @@ int tab_remove_window(struct Tab *t, int id) {
     // not the first node
     if(parent) {
         parent->child = current->child;
-        window_free(current);
+        window_free_views(current);
         free(current);
         if(t->active_window >= idx) {
             t->active_window -= 1;
         }
     } else {
-        window_free(current);
+        struct Window *child = current->child;
+        window_free_views(current);
+        if(child) {
+            t->w = *child;
+            xfree(child);
+        }
         return -1;
     }
     return 0;
@@ -771,8 +776,12 @@ struct Window window_clone_shallow(struct Window *w) {
     };
 }
 
-void window_free(struct Window *w) {
+void window_free_views(struct Window *w) {
     vec_cleanup(&w->view_stack);
+}
+
+void window_free(struct Window *w) {
+    window_free_views(w);
     if(w->child) {
         window_free(w->child);
         w->child = 0;
@@ -821,21 +830,18 @@ int window_render(struct Window *w, ViewPort *vp, const struct winsize *ws, stru
 
             } break;
         }
-        window_render(w->child, &sub_vp, ws, ac);
         // render subwindow(s)
-        if(tab_window_active(tab_active()) == w) {
-            // render self window with cursor
-            for(size_t i = 0; i < w->view_stack.len; i++) {
-                if(i == w->active_view) {
-                    view_render(window_view_get(w, i), &self_vp, ws, ac);
-                } else {
-                    view_render(window_view_get(w, i), &self_vp, ws, 0);
-                }
+        window_render(w->child, &sub_vp, ws, ac);
+        // render self window with cursor
+        for(size_t i = 0; i < w->view_stack.len; i++) {
+            struct View *v = window_view_get(w, i);
+            if(!v->viewport_locked) {
+                v->vp = self_vp;
             }
-        } else {
-            // render self window
-            for(size_t i = 0; i < w->view_stack.len; i++) {
-                view_render(window_view_get(w, i), &self_vp, ws, 0);
+            if(i == w->active_view && tab_window_active(tab_active()) == w ) {
+                view_render(v, &self_vp, ws, ac);
+            } else {
+                view_render(v, &self_vp, ws, 0);
             }
         }
         self_vp = sub_vp;
@@ -1039,7 +1045,6 @@ int view_erase(struct View *v) {
         str_remove(&line->text, start, cursor-1);
         v->view_cursor.off_x -= cursor - start;
     } else if(v->view_cursor.off_y > 0) {
-        size_t cursor_line = v->view_cursor.off_y;
         struct Line *prev_line = buffer_line_get(v->buff, v->view_cursor.off_y -1);
         // move cursor to end of previous line
         v->view_cursor.off_x = str_len(&prev_line->text);

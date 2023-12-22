@@ -138,7 +138,9 @@ struct View {
     struct Buffer *buff;
     struct ViewOpt options;
     Style style;
-    Maybe(ViewPort) vp;
+    // whether this view manages it's own viewport
+    _Bool viewport_locked;
+    ViewPort vp;
     Maybe(ViewCursor) selection_end;
 };
 
@@ -164,7 +166,7 @@ enum SplitDir {
 struct Window {
     enum SplitDir split_dir;
     struct Window *child;
-    Vec view_stack;
+    Vec view_stack; // vec of Views
     size_t active_view;
 };
 
@@ -173,6 +175,7 @@ struct Window window_new(void);
 // Copies a window, but does not copy it's children
 struct Window window_clone(struct Window *w);
 
+void window_free_views(struct Window *w);
 void window_free(struct Window *w);
 
 int window_view_push(struct Window *w, struct View v);
