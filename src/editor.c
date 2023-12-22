@@ -33,11 +33,10 @@ struct View MESSAGE = {
 
 // len in character idx
 size_t render_width(Str *s, size_t len) {
-    Str head = str_head(s, len);
     size_t width = 0;
-    for(size_t i = 0; i < str_len(&head); i++) {
+    for(size_t i = 0; i < len; i++) {
         utf32 c = 0;
-        assert(!str_get_char(&head, i, &c));
+        assert(!str_get_char(s, i, &c));
         width += utf32_width(c);
     }
     return width;
@@ -576,7 +575,6 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
                 size_t take_width = real_vp->width - num_width;
                 Str tail = str_tail(&line->text, len);
                 Str tail_head = str_head(&tail, v->view_cursor.off_x - len + 1);
-                //size_t new_len = take_cols(str_as_cstr(line) + len, v->view_cursor.off_x - len, &take_width, 4);
                 size_t new_len = take_cols(&tail_head, &take_width, 4);
                 row += 1;
                 col -= take_width;
@@ -1383,12 +1381,35 @@ int mode_change(enum Mode mode) {
     return 0;
 }
 
+static size_t message_line_render_height(struct winsize *ws) {
+    size_t msg_line_height = 1;
+    if(MESSAGE.buff->lines.len) {
+        struct Line *message_line = buffer_line_get(MESSAGE.buff, 0);
+        msg_line_height += message_line->render_width / ws->ws_col;
+    }
+    return msg_line_height;
+}
+
+int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
+    size_t msg_line_height = message_line_render_height(ws);
+    ViewPort vp = {
+        .width = ws->ws_col,
+        .height = msg_line_height,
+        .off_x = 0,
+        .off_y = ws->ws_row - msg_line_height,
+    };
+
+    view_render(&MESSAGE, &vp, ws, ac);
+    return 0;
+}
+
+
 int active_line_render(struct winsize *ws) {
     struct View *v = tab_active_view(tab_active());
 
     Style active_line_style = style_bg(style_new(), colour_vt(VT_GRA));
     // TODO(louis) compute render with first
-    set_cursor_pos(0, ws->ws_row - 2);
+    set_cursor_pos(0, ws->ws_row - 1 - message_line_render_height(ws));
     style_fmt(
             &active_line_style,
             STDOUT_FILENO,
@@ -1412,18 +1433,6 @@ int active_line_render(struct winsize *ws) {
     return 0;
 }
 
-int message_line_render(struct winsize *ws, struct AbsoluteCursor *ac) {
-    ViewPort vp = {
-        .width = ws->ws_col,
-        .height = 1,
-        .off_x = 0,
-        .off_y = ws->ws_row-1,
-    };
-
-    view_render(&MESSAGE, &vp, ws, ac);
-    return 0;
-}
-
 int editor_render(struct winsize *ws) {
     if(!RUNNING) return 0;
     write(STDOUT_FILENO, CUR_HIDE, sizeof(CUR_HIDE) -1);
@@ -1437,6 +1446,7 @@ int editor_render(struct winsize *ws) {
     if(active_line_render(ws)) return -1;
 
     if(MESSAGE.buff->lines.len && MODE == M_Command) {
+        assert(MESSAGE.buff->lines.len <= 1 && "commands should fit on one line");
         if(message_line_render(ws, &ac)) {
             write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
             return -1;
