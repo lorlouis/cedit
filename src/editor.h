@@ -72,6 +72,7 @@ struct Line {
 struct Buffer {
     struct Input in;
     enum FileMode fm;
+    // vec of lines
     Vec lines;
     int dirty;
     size_t rc;

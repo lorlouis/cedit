@@ -83,7 +83,7 @@ int handle_keys(void) {
 
 int main(int argc, const char **argv) {
     // parse options
-    load_locale();    
+    load_locale();
 
     // register cleanup
     if(atexit(cleanup)) {

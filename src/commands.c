@@ -38,8 +38,8 @@ int exec_command(char *command) {
         // a null token is fine
         token = strtok(NULL, sep);
         editor_split_open(token, FM_RW, SD_Horizontal);
+    } else {
+        message_print("E: unknown command");
     }
-
-    message_print("E: unknown command");
     return 0;
 }
