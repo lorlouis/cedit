@@ -227,6 +227,11 @@ int buffer_init_from_path(
         return -1;
 }
 
+int buffer_num_width(struct Buffer *buff) {
+    int num_width = ceil(log10((double)buff->lines.len)) + 1;
+    if(num_width < 2) num_width = 2;
+    return num_width;
+}
 
 struct Line *buffer_line_get(struct Buffer *buff, size_t idx) {
     buff->lines.type_size = sizeof(struct Line);
@@ -464,9 +469,18 @@ struct RenderPlan {
     size_t fully_rendered_lines;
     size_t last_line_chars;
     struct AbsoluteCursor cursor;
+    uint16_t real_height;
+    uint16_t real_width;
+    uint16_t line_max_width;
+    int num_width;
+    int prefix_width;
 };
 
-struct RenderPlan view_plan_render(
+int render_plan_line_count(struct RenderPlan *rp) {
+    return rp->fully_rendered_lines + (rp->fully_rendered_lines != SIZE_MAX);
+}
+
+static struct RenderPlan view_plan_render(
         struct View *v,
         ViewPort *vp,
         const struct winsize *ws) {
@@ -489,11 +503,11 @@ struct RenderPlan view_plan_render(
     }
 
     int prefix_width = 0;
+    int num_width = 0;
     // check if there is a line num
     if(!v->options.no_line_num) {
-        // compute the number of chars to write the line number + 1
-        prefix_width = ceil(log10((double)v->buff->lines.len)) + 1;
-        if(prefix_width < 2) prefix_width = 2;
+        num_width = buffer_num_width(v->buff);
+        prefix_width += num_width;
     }
 
     uint16_t line_max_width = real_width - prefix_width;
@@ -569,30 +583,17 @@ struct RenderPlan view_plan_render(
         .fully_rendered_lines = lines_count,
         .last_line_chars = last_line_chars,
         .cursor = ac,
+        .real_height = real_height,
+        .real_width = real_width,
+        .line_max_width = line_max_width,
+        .num_width = num_width,
+        .prefix_width = prefix_width,
     };
 }
 
-int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
+static int render_plan_render(const struct RenderPlan *restrict rp, struct AbsoluteCursor *ac) {
     Style base_style = rp->v->style;
     Style line_num_style = style_fg(base_style, colour_vt(VT_GRA));
-
-    int prefix_width = 0;
-
-    int num_width = 0;
-    // check if there is a line num
-    if(!rp->v->options.no_line_num) {
-        // compute the number of chars to write the line number + 1
-        num_width = ceil(log10((double)rp->v->buff->lines.len)) + 1;
-        if(num_width < 2) num_width = 2;
-    }
-    prefix_width += num_width;
-
-
-    uint16_t real_height = viewport_viewable_height(rp->vp, rp->ws);
-    uint16_t real_width = viewport_viewable_width(rp->vp, rp->ws);
-
-    uint16_t line_max_width = real_width - prefix_width;
-    uint16_t lines_max = real_height;
 
     // render full lines
     size_t count;
@@ -602,21 +603,21 @@ int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
         // print first "real" line
         set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
         // print line number
-        if(num_width > 1) {
+        if(rp->num_width > 1) {
             style_fmt(
                     &line_num_style,
                     STDOUT_FILENO,
                     "%*ld ",
-                    num_width -1,
+                    rp->num_width -1,
                     count + rp->v->line_off + 1
                 );
         }
 
-        size_t take_width = line_max_width;
+        size_t take_width = rp->line_max_width;
         ssize_t len = take_cols(&l->text, &take_width, CONFIG.tab_width);
         if(len == -1) return -1;
         if(write_escaped(&base_style, &l->text, len) == -1) return -1;
-        size_t fill = line_max_width - take_width;
+        size_t fill = rp->line_max_width - take_width;
         if(fill) {
             style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
         }
@@ -626,21 +627,21 @@ int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
         while(str_len(&rest)) {
             spill += 1;
             set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
-            if(num_width) {
+            if(rp->num_width) {
                 style_fmt(
                         &line_num_style,
                         STDOUT_FILENO,
                         "%*c",
-                        num_width,
+                        rp->num_width,
                         ' '
                     );
             }
 
-            take_width = line_max_width;
+            take_width = rp->line_max_width;
             ssize_t len = take_cols(&rest, &take_width, CONFIG.tab_width);
             if(len == -1) return -1;
             if(write_escaped(&base_style, &rest, len) == -1) return -1;
-            size_t fill = line_max_width - take_width;
+            size_t fill = rp->line_max_width - take_width;
             if(fill) {
                 style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
             }
@@ -655,12 +656,12 @@ int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
         // print first "real" line
         set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
         // print line number
-        if(num_width > 1) {
+        if(rp->num_width > 1) {
             style_fmt(
                     &line_num_style,
                     STDOUT_FILENO,
                     "%*ld ",
-                    num_width -1,
+                    rp->num_width -1,
                     count + rp->v->line_off + 1
                 );
         }
@@ -669,25 +670,25 @@ int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
 
         if(write_escaped(&base_style, &head, str_len(&head)) == -1) return -1;
         size_t width = render_width(&head, str_len(&head));
-        size_t fill = line_max_width - width;
+        size_t fill = rp->line_max_width - width;
         if(fill) {
             style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
         }
         count += 1;
     }
 
-    for(size_t i = count+spill; i < real_height; i++) {
+    for(size_t i = count+spill; i < rp->real_height; i++) {
         set_cursor_pos(rp->vp->off_x, rp->vp->off_y+i);
-        if(num_width > 1) {
+        if(rp->num_width > 1) {
             style_fmt(
                     &line_num_style,
                     STDOUT_FILENO,
                     "%*c ",
-                    num_width -2,
+                    rp->num_width -2,
                     '~'
                 );
         }
-        style_fmt(&base_style, STDOUT_FILENO, "%*c", line_max_width, ' ');
+        style_fmt(&base_style, STDOUT_FILENO, "%*c", rp->line_max_width, ' ');
 
     }
 
@@ -699,169 +700,9 @@ int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
 }
 
 
-// TODO(louis) rewrite this. I hate it
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
-
     struct RenderPlan rp = view_plan_render(v, vp, ws);
     return render_plan_render(&rp, ac);
-
-    ViewPort *real_vp = vp;
-
-    Style view_bg = v->style;
-
-    Style num_text = style_fg(view_bg, colour_vt(VT_BLU));
-
-    if(v->viewport_locked) {
-        real_vp = &v->vp;
-    }
-
-    uint16_t real_width = viewport_viewable_width(real_vp, ws);
-    uint16_t real_height = viewport_viewable_height(real_vp, ws);
-
-    if (v->line_off > v->view_cursor.off_y) {
-        v->line_off = v->view_cursor.off_y;
-    } else if(v->view_cursor.off_y - v->line_off > real_height) {
-        v->line_off += (v->view_cursor.off_y - v->line_off) - real_height;
-    }
-
-    int num_width = 0;
-    if(!v->options.no_line_num) {
-        // compute the number of chars to write the line number + 1
-        num_width = ceil(log10((double)v->buff->lines.len)) + 1;
-        if(num_width < 2) num_width = 2;
-    }
-
-    uint16_t text_width = real_width - num_width;
-
-    size_t *extra_render_line_per_line = xcalloc(real_height, sizeof(size_t));
-    size_t line_off = 0;
-    uint16_t cursor_line_off = 0;
-    size_t i = 0;
-    for(;
-            i + v->line_off < v->buff->lines.len && i + line_off < real_height;
-            i++) {
-        struct Line *l = buffer_line_get(v->buff, i+line_off+v->line_off);
-
-        size_t char_off = 0;
-        size_t extra_render_line_count = 0;
-        while(i + line_off + extra_render_line_count < real_height) {
-            ssize_t len = 0;
-            size_t take_width = text_width;
-
-            if(char_off < str_len(&l->text)) {
-                Str tail = str_tail(&l->text, char_off);
-                len = take_cols(&tail, &take_width, CONFIG.tab_width);
-            } else {
-                take_width = 0;
-            }
-
-            assert(len >= 0 && "bad string");
-
-            set_cursor_pos(real_vp->off_x, real_vp->off_y+i+line_off + extra_render_line_count);
-
-            if (num_width) {
-                style_fmt(
-                        &num_text,
-                        STDOUT_FILENO,
-                        "%*ld ",
-                        num_width - 1,
-                        i + v->line_off + 1
-                    );
-            }
-
-            Str tail = str_tail(&l->text, char_off);
-
-            write_escaped(&view_bg, &tail, len);
-
-            // fill the rest of the line, useful when views overlap
-            int fill = text_width-take_width;
-            if(fill) {
-                style_fmt(&view_bg, STDOUT_FILENO, "%*s", fill, " ");
-            }
-
-            // reached the end of the line
-            if((size_t)len + char_off >= str_len(&l->text)) break;
-
-            char_off += len;
-            extra_render_line_count += 1;
-        }
-        extra_render_line_per_line[i] = extra_render_line_count;
-        line_off += extra_render_line_count;
-
-        // adjust y offset for cursor
-        if(v->view_cursor.off_y > i+v->line_off) {
-            cursor_line_off = line_off;
-        }
-
-    }
-
-    for(int j = i + line_off; j < real_height; j++) {
-        set_cursor_pos(real_vp->off_x, real_vp->off_y+j);
-        if (num_width) {
-            style_fmt(
-                    &num_text,
-                    STDOUT_FILENO,
-                    "%*c ",
-                    num_width - 1,
-                    '~'
-                );
-        }
-        style_fmt(
-                &view_bg,
-                STDOUT_FILENO,
-                "%*s",
-                real_width-num_width,
-                " ");
-    }
-
-    if(ac && v->buff->lines.len) {
-        struct Line *line = buffer_line_get(v->buff, v->view_cursor.off_y);
-        Str line_until_col = str_head(&line->text, v->view_cursor.off_x + 1);
-        uint16_t col = count_cols(&line_until_col, 4);
-        assert(col != (uint16_t)-1);
-        uint16_t row = v->view_cursor.off_y - v->line_off + cursor_line_off;
-
-        if(col >= real_vp->width - num_width) {
-            int16_t diff = col - (real_vp->width - num_width);
-            size_t len = 0;
-            while(diff >= 0) {
-                size_t take_width = real_vp->width - num_width;
-                Str tail = str_tail(&line->text, len);
-                Str tail_head = str_head(&tail, v->view_cursor.off_x - len + 1);
-                size_t new_len = take_cols(&tail_head, &take_width, 4);
-                row += 1;
-                col -= take_width;
-                diff -= take_width;
-                len = new_len;
-            }
-        }
-
-        if(row >= real_vp->height) {
-            uint16_t diff = row - real_vp->height;
-            uint16_t line_off = 0;
-            uint16_t render_lines = 0;
-            while(render_lines <= diff) {
-                render_lines += extra_render_line_per_line[line_off]+1;
-                line_off += 1;
-            }
-            v->line_off += line_off;
-            // FIXME(louis) this is so ugly, the layout should be computed
-            // first and then rendered
-            free(extra_render_line_per_line);
-            return view_render(v, vp, ws, ac);
-        }
-        else {
-            // TODO check col here, it looks like this is where the é bug happens
-            ac->col = viewport_width_clamp(real_vp, ws, col + num_width + real_vp->off_x);
-            ac->row = viewport_height_clamp(real_vp, ws, row + real_vp->off_y);
-        }
-    } else if (ac && ! v->buff->lines.len) {
-        ac->col = viewport_width_clamp(real_vp, ws, num_width + real_vp->off_x);
-        ac->row = viewport_height_clamp(real_vp, ws, real_vp->off_y);
-    }
-    free(extra_render_line_per_line);
-
-    return 0;
 }
 
 struct Buffer* buffer_rc_inc(struct Buffer *buff) {
