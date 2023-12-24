@@ -19,11 +19,6 @@ struct winsize WS = {0};
 
 int RUNNING = 1;
 
-struct AbsoluteCursor {
-    uint16_t col;
-    uint16_t row;
-};
-
 struct View MESSAGE = {
     .buff = 0,
     .options = {
@@ -462,22 +457,8 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 }
 
 
-struct RenderPlan {
-    const struct View *v;
-    const ViewPort *vp;
-    const struct winsize *ws;
-    size_t fully_rendered_lines;
-    size_t last_line_chars;
-    struct AbsoluteCursor cursor;
-    uint16_t real_height;
-    uint16_t real_width;
-    uint16_t line_max_width;
-    int num_width;
-    int prefix_width;
-};
-
 int render_plan_line_count(struct RenderPlan *rp) {
-    return rp->fully_rendered_lines + (rp->fully_rendered_lines != SIZE_MAX);
+    return rp->fully_rendered_lines + (rp->last_line_chars != SIZE_MAX);
 }
 
 static struct RenderPlan view_plan_render(
@@ -577,7 +558,6 @@ static struct RenderPlan view_plan_render(
     }
 
     return (struct RenderPlan) {
-        .v = v,
         .vp = real_vp,
         .ws = ws,
         .fully_rendered_lines = lines_count,
@@ -591,15 +571,16 @@ static struct RenderPlan view_plan_render(
     };
 }
 
-static int render_plan_render(const struct RenderPlan *restrict rp, struct AbsoluteCursor *ac) {
-    Style base_style = rp->v->style;
+static int render_plan_render(const struct View *restrict v, struct AbsoluteCursor *ac) {
+    const struct RenderPlan *rp = &v->rp;
+    Style base_style = v->style;
     Style line_num_style = style_fg(base_style, colour_vt(VT_GRA));
 
     // render full lines
     size_t count;
     int spill = 0;
     for(count = 0; count < rp->fully_rendered_lines; count++) {
-        struct Line *l = buffer_line_get(rp->v->buff, count + rp->v->line_off);
+        struct Line *l = buffer_line_get(v->buff, count + v->line_off);
         // print first "real" line
         set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
         // print line number
@@ -609,7 +590,7 @@ static int render_plan_render(const struct RenderPlan *restrict rp, struct Absol
                     STDOUT_FILENO,
                     "%*ld ",
                     rp->num_width -1,
-                    count + rp->v->line_off + 1
+                    count + v->line_off + 1
                 );
         }
 
@@ -652,7 +633,7 @@ static int render_plan_render(const struct RenderPlan *restrict rp, struct Absol
     }
 
     if(rp->last_line_chars != SIZE_MAX) {
-        struct Line *l = buffer_line_get(rp->v->buff, count + rp->v->line_off);
+        struct Line *l = buffer_line_get(v->buff, count + v->line_off);
         // print first "real" line
         set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
         // print line number
@@ -662,7 +643,7 @@ static int render_plan_render(const struct RenderPlan *restrict rp, struct Absol
                     STDOUT_FILENO,
                     "%*ld ",
                     rp->num_width -1,
-                    count + rp->v->line_off + 1
+                    count + v->line_off + 1
                 );
         }
 
@@ -702,7 +683,8 @@ static int render_plan_render(const struct RenderPlan *restrict rp, struct Absol
 
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     struct RenderPlan rp = view_plan_render(v, vp, ws);
-    return render_plan_render(&rp, ac);
+    v->rp = rp;
+    return render_plan_render(v, ac);
 }
 
 struct Buffer* buffer_rc_inc(struct Buffer *buff) {
@@ -1231,6 +1213,14 @@ int normal_handle_key(struct KeyEvent *e) {
                         v->view_cursor.off_y += 1;
                     }
                     v->line_off += 1;
+                }
+            } break;
+            case 'y': {
+                if(v->line_off > 0) {
+                    if(v->view_cursor.off_y == render_plan_line_count(&v->rp) + v->line_off -1) {
+                        v->view_cursor.off_y -= 1;
+                    }
+                    v->line_off -= 1;
                 }
             } break;
             case KC_ARRLEFT:

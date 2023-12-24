@@ -133,6 +133,26 @@ struct ViewOpt {
     int no_line_num;
 };
 
+
+struct AbsoluteCursor {
+    uint16_t col;
+    uint16_t row;
+};
+
+struct RenderPlan {
+    const ViewPort *vp;
+    const struct winsize *ws;
+    size_t fully_rendered_lines;
+    size_t last_line_chars;
+    struct AbsoluteCursor cursor;
+    uint16_t real_height;
+    uint16_t real_width;
+    uint16_t line_max_width;
+    int num_width;
+    int prefix_width;
+};
+
+
 struct View {
     size_t line_off;
     struct ViewCursor view_cursor;
@@ -143,6 +163,7 @@ struct View {
     _Bool viewport_locked;
     ViewPort vp;
     Maybe(ViewCursor) selection_end;
+    struct RenderPlan rp;
 };
 
 // does not clone `buff`
