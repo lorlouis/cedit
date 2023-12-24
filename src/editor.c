@@ -686,8 +686,8 @@ int render_plan_render(const struct RenderPlan *rp, struct AbsoluteCursor *ac) {
                     num_width -2,
                     '~'
                 );
-            style_fmt(&base_style, STDOUT_FILENO, "%*c", line_max_width, ' ');
         }
+        style_fmt(&base_style, STDOUT_FILENO, "%*c", line_max_width, ' ');
 
     }
 
