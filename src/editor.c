@@ -19,6 +19,23 @@ struct winsize WS = {0};
 
 int RUNNING = 1;
 
+struct ViewSelection {
+    ViewCursor start;
+    ViewCursor end;
+};
+
+struct ViewSelection VISUAL_SELECTION = {
+    .start = {
+        .off_x = SIZE_MAX,
+        .off_y = SIZE_MAX
+    },
+    .end = {
+        .off_x = SIZE_MAX,
+        .off_y = SIZE_MAX
+    },
+};
+
+
 struct View MESSAGE = {
     .buff = 0,
     .options = {
@@ -276,9 +293,6 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
     }
 
     if(wc == L'\t') {
-        Style style = {0};
-        style = style_fg(style, colour_vt(VT_GRA));
-
         int tail_len = CONFIG.tab_width -1;
         if(CONFIG.tab_width == 0) {
             tail_len = 0;
@@ -290,7 +304,7 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
     } else if (iswprint(wc)) {
         utf32_to_utf8(c, char_buffer, 4);
         if(fd != -1) {
-            write(fd, char_buffer, utf32_len_utf8(c));
+            style_fmt(base_style, fd, "%*s", utf32_len_utf8(c), char_buffer);
         }
         count += utf32_width(c);
     }
@@ -298,15 +312,13 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
     return count;
 }
 
-int write_escaped(Style *base_style, const Str *line, size_t len) {
+int write_escaped(Style *base_style, const struct Line *line, size_t off, size_t len) {
 
-    size_t off = 0;
     int count = 0;
     int ret;
-
-    while(off < len) {
+    for(size_t i = off; i < len+off; i++) {
         utf32 c = 0;
-        assert(str_get_char(line, off, &c) != -1);
+        assert(str_get_char(&line->text, i, &c) != -1);
 
         // could be wide null (unlikely but still)
         assert(c && "null in middle of the line");
@@ -315,7 +327,6 @@ int write_escaped(Style *base_style, const Str *line, size_t len) {
         ret = write_char_escaped(base_style, c, STDOUT_FILENO);
         if(ret == -1) return ret;
         count += ret;
-        off += 1;
     }
     return count;
 }
@@ -438,6 +449,67 @@ void view_set_cursor(struct View *v, size_t x, size_t y) {
 struct ViewCursor view_get_cursor(struct View *v) {
     return v->view_cursor;
 }
+
+// Returns a view_selection where the start is guaranteed to come before the end
+struct ViewSelection view_selection_balance(struct ViewSelection *vs) {
+    ViewCursor start = vs->start;
+    ViewCursor end = vs->end;
+
+
+    _Bool end_comes_before_start =
+        vs->end.off_y < vs->start.off_y
+        || (vs->end.off_y == vs->start.off_y
+            && vs->end.off_x < vs->start.off_x)
+        ;
+
+    if(end_comes_before_start) {
+        end = vs->start;
+        start = vs->end;
+    }
+    return (struct ViewSelection) {
+        .start = start,
+        .end = end,
+    };
+}
+
+_Bool view_selection_position_selected(const struct ViewSelection *vs, size_t off_x, size_t off_y) {
+
+    _Bool position_selected =
+        ((vs->start.off_y == off_y
+          && vs->start.off_x <= off_x)
+         || vs->start.off_y < off_y)
+        &&
+        ((vs->end.off_y == off_y
+          && vs->end.off_x >= off_x)
+         || vs->end.off_y > off_y)
+        ;
+
+    return position_selected;
+}
+
+_Bool view_selection_line_partially_selected(const struct ViewSelection *vs, size_t off_x, size_t off_y) {
+    _Bool partially_selected =
+        ((vs->start.off_y == off_y
+          && vs->start.off_x <= off_x)
+         || vs->start.off_y < off_y)
+        ||
+        ((vs->end.off_y == off_y
+          && vs->end.off_x >= off_x)
+         || vs->end.off_y > off_y)
+        ;
+
+    return partially_selected;
+}
+
+_Bool view_selection_line_fully_selected(const struct ViewSelection *vs, size_t off_y) {
+    _Bool fully_selected =
+        vs->start.off_y < off_y
+        && vs->end.off_y > off_y
+        ;
+    return fully_selected;
+}
+
+
 
 void view_move_cursor_start(struct View *v) {
     view_set_cursor(v, 0, v->view_cursor.off_y);
@@ -575,6 +647,9 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
     const struct RenderPlan *rp = &v->rp;
     Style base_style = v->style;
     Style line_num_style = style_fg(base_style, colour_vt(VT_GRA));
+    Style highlight = style_bg(base_style, colour_vt(VT_BLU));
+
+    struct ViewSelection vs = view_selection_balance(&VISUAL_SELECTION);
 
     // render full lines
     size_t count;
@@ -597,15 +672,32 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
         size_t take_width = rp->line_max_width;
         ssize_t len = take_cols(&l->text, &take_width, CONFIG.tab_width);
         if(len == -1) return -1;
-        if(write_escaped(&base_style, &l->text, len) == -1) return -1;
+
+        size_t char_offset = 0;
+
+        if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
+            if(write_escaped(&highlight, l, char_offset, len+char_offset) == -1) return -1;
+        } else if(view_selection_line_partially_selected(&vs, char_offset, count + v->line_off)) {
+            for(size_t i = 0;i < (size_t)len; i++) {
+                if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
+                    if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
+                } else {
+                    if(write_escaped(&base_style, l, char_offset+i, 1) == -1) return -1;
+                }
+            }
+        } else {
+            // not selected at all;
+            if(write_escaped(&base_style, l, 0, len) == -1) return -1;
+        }
+        char_offset += len;
+
         size_t fill = rp->line_max_width - take_width;
         if(fill) {
             style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
         }
 
         // print the wraparound lines
-        Str rest = str_tail(&l->text, len);
-        while(str_len(&rest)) {
+        while(char_offset < str_len(&l->text)) {
             spill += 1;
             set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
             if(rp->num_width) {
@@ -619,15 +711,29 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
             }
 
             take_width = rp->line_max_width;
+            Str rest = str_tail(&l->text, char_offset);
             ssize_t len = take_cols(&rest, &take_width, CONFIG.tab_width);
             if(len == -1) return -1;
-            if(write_escaped(&base_style, &rest, len) == -1) return -1;
+
+            if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
+                if(write_escaped(&highlight, l, char_offset, len+char_offset) == -1) return -1;
+            } else if(view_selection_line_partially_selected(&vs, char_offset, count + v->line_off)) {
+                for(size_t i = 0;i < (size_t)len; i++) {
+                    if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
+                        if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
+                    } else {
+                        if(write_escaped(&base_style, l, char_offset+i, 1) == -1) return -1;
+                    }
+                }
+            } else {
+                // not selected at all;
+                if(write_escaped(&base_style, l, 0, len) == -1) return -1;
+            }
+            char_offset += len;
             size_t fill = rp->line_max_width - take_width;
             if(fill) {
                 style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
             }
-
-            rest = str_tail(&rest, len);
         }
 
     }
@@ -647,9 +753,10 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
                 );
         }
 
-        Str head = str_head(&l->text, rp->last_line_chars+1);
 
-        if(write_escaped(&base_style, &head, str_len(&head)) == -1) return -1;
+        if(write_escaped(&base_style, l, 0, rp->last_line_chars) == -1) return -1;
+
+        Str head = str_head(&l->text, rp->last_line_chars+1);
         size_t width = render_width(&head, str_len(&head));
         size_t fill = rp->line_max_width - width;
         if(fill) {
@@ -1160,7 +1267,7 @@ int normal_handle_key(struct KeyEvent *e) {
     if(e->modifier == 0) {
         switch(e->key) {
             case 'G': {
-                view_move_cursor(v, 0, SIZE_MAX);
+                view_move_cursor(v, 0, v->buff->lines.len);
             } break;
             case 'O': {
                 view_move_cursor_start(v);
@@ -1367,41 +1474,46 @@ int command_handle_key(struct KeyEvent *e) {
 
 int visual_enter(void) {
     struct View *v = tab_active_view(tab_active());
-    set_some(&v->selection_end, view_get_cursor(v));
+    VISUAL_SELECTION.start = view_get_cursor(v);
+    VISUAL_SELECTION.end = view_get_cursor(v);
     return 0;
 }
 
 int visual_leave(void) {
-    struct View *v = tab_active_view(tab_active());
-    set_none(&v->selection_end);
+    VISUAL_SELECTION.start.off_x = SIZE_MAX;
+    VISUAL_SELECTION.start.off_y = SIZE_MAX;
+    VISUAL_SELECTION.end.off_x = SIZE_MAX;
+    VISUAL_SELECTION.end.off_y = SIZE_MAX;
     return 0;
 }
 
 int visual_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
-    assert(is_some(v->selection_end));
 
     if(e->modifier == 0) {
         switch(e->key) {
             case '\e':
                 mode_change(M_Normal);
                 return 0;
-
             case KC_ARRDOWN:
             case 'j': {
                 view_move_cursor(v, 0,+1);
+                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
             case KC_ARRUP:
             case 'k': {
                 view_move_cursor(v, 0,-1);
+                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
             case KC_ARRLEFT:
             case 'h': {
                 view_move_cursor(v, -1,0);
+                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
             case KC_ARRRIGHT:
             case 'l': {
                 view_move_cursor(v, +1,0);
+                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
         }
     }

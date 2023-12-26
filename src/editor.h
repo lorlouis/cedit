@@ -110,7 +110,7 @@ enum MaybeVariant {
 
 #define is_some(m) ((m).o == Some)
 #define is_none(m) ((m).o == None)
-#define as_ptr(m) ((m).o == Some ? &m.u.some : 0)
+#define as_ptr(m) ((m).o == Some ? &(m).u.some : 0)
 #define Some(...) {.o = Some, .u.some = __VA_ARGS__ }
 #define set_some(v, ...) {(v)->o = Some; (v)->u.some = __VA_ARGS__; }
 #define set_none(v) {(v)->o = None;}
