@@ -24,18 +24,6 @@ struct ViewSelection {
     ViewCursor end;
 };
 
-struct ViewSelection VISUAL_SELECTION = {
-    .start = {
-        .off_x = SIZE_MAX,
-        .off_y = SIZE_MAX
-    },
-    .end = {
-        .off_x = SIZE_MAX,
-        .off_y = SIZE_MAX
-    },
-};
-
-
 struct View MESSAGE = {
     .buff = 0,
     .options = {
@@ -145,18 +133,22 @@ int message_print(const char *fmt, ...) {
 FILE* filemode_open(
         enum FileMode fm,
         const char *path) {
-    char *mode;
 
     switch(fm) {
-        case FM_RW:
-            mode = "r+";
-            break;
+        case FM_RW: {
+            // try to open the file
+            FILE *f = fopen(path, "r+");
+            // it's possible that the file does not exist
+            if(!f && errno == ENOENT) {
+                return fopen(path, "w+");
+            }
+            return f;
+        } break;
         case FM_RO:
-            mode = "r";
+            return fopen(path, "r");
             break;
     }
-
-    return fopen(path, mode);
+    return 0;
 }
 
 // Returns -1 on error and sets errno
@@ -366,6 +358,7 @@ void view_clear(struct View *v) {
     for(size_t i = 0; i < v->buff->lines.len; i++) {
         line_clear(buffer_line_get(v->buff, i));
     }
+    v->buff->lines.len = 0;
 }
 
 void view_free(struct View *v) {
@@ -446,25 +439,38 @@ void view_set_cursor(struct View *v, size_t x, size_t y) {
     v->view_cursor.off_x = x < str_len(&l->text) ? x : str_len(&l->text);
 }
 
-struct ViewCursor view_get_cursor(struct View *v) {
+struct ViewCursor view_get_cursor(const struct View *v) {
     return v->view_cursor;
 }
 
+struct ViewSelection view_selection_empty(void) {
+    return (struct ViewSelection) {
+        .start = {
+            .off_x = SIZE_MAX,
+            .off_y = SIZE_MAX,
+        },
+        .end = {
+            .off_x = SIZE_MAX,
+            .off_y = SIZE_MAX,
+        },
+    };
+}
+
 // Returns a view_selection where the start is guaranteed to come before the end
-struct ViewSelection view_selection_balance(struct ViewSelection *vs) {
-    ViewCursor start = vs->start;
-    ViewCursor end = vs->end;
+struct ViewSelection view_selection_from_cursors(struct ViewCursor a, struct ViewCursor b) {
+    ViewCursor start = a;
+    ViewCursor end = b;
 
 
     _Bool end_comes_before_start =
-        vs->end.off_y < vs->start.off_y
-        || (vs->end.off_y == vs->start.off_y
-            && vs->end.off_x < vs->start.off_x)
+        b.off_y < a.off_y
+        || (b.off_y == a.off_y
+            && b.off_x < a.off_x)
         ;
 
     if(end_comes_before_start) {
-        end = vs->start;
-        start = vs->end;
+        end = a;
+        start = b;
     }
     return (struct ViewSelection) {
         .start = start,
@@ -487,15 +493,16 @@ _Bool view_selection_position_selected(const struct ViewSelection *vs, size_t of
     return position_selected;
 }
 
-_Bool view_selection_line_partially_selected(const struct ViewSelection *vs, size_t off_x, size_t off_y) {
+_Bool view_selection_line_tail_partially_selected(const struct ViewSelection *vs, size_t off_x, size_t off_y) {
     _Bool partially_selected =
-        ((vs->start.off_y == off_y
-          && vs->start.off_x <= off_x)
-         || vs->start.off_y < off_y)
+        (vs->start.off_y == off_y
+         && vs->start.off_x <= off_x)
         ||
-        ((vs->end.off_y == off_y
-          && vs->end.off_x >= off_x)
-         || vs->end.off_y > off_y)
+        (vs->end.off_y == off_y
+         && vs->end.off_x >= off_x)
+        ||
+        (vs->start.off_y <= off_y
+         && vs->end.off_y >= off_y)
         ;
 
     return partially_selected;
@@ -509,7 +516,66 @@ _Bool view_selection_line_fully_selected(const struct ViewSelection *vs, size_t 
     return fully_selected;
 }
 
+Str view_selection_get_text(const struct ViewSelection *vs, const struct View *v) {
+    Str selected = str_new();
 
+    size_t line_idx = vs->start.off_y;
+
+    int selected_lines_count = vs->end.off_y - vs->start.off_y + 1;
+
+    struct Line *l = buffer_line_get(v->buff, line_idx);
+    if(str_is_empty(&l->text)) {
+        str_push(&selected, "\n", strlen("\n"));
+    }
+    else if(view_selection_line_fully_selected(vs, line_idx)) {
+        str_push(&selected, str_as_cstr(&l->text), str_cstr_len(&l->text));
+        str_push(&selected, "\n", strlen("\n"));
+    }
+    else if(view_selection_line_tail_partially_selected(vs, 0, line_idx)) {
+        Str substr = str_tail(&l->text, vs->start.off_x);
+        _Bool only_one_line = vs->end.off_y == vs->start.off_y;
+        // if the selection is on a single line, only select up to
+        // end cursor
+        if(only_one_line) {
+            size_t substr_len = vs->end.off_x - vs->start.off_x;
+            if(substr_len == str_len(&substr)) {
+                str_push(&selected, str_as_cstr(&substr), str_cstr_len(&substr));
+                str_push(&selected, "\n", strlen("\n"));
+            } else {
+                substr = str_head(&substr, substr_len+2);
+                str_push(&selected, str_as_cstr(&substr), str_cstr_len(&substr));
+            }
+        } else {
+            str_push(&selected, str_as_cstr(&substr), str_cstr_len(&substr));
+            str_push(&selected, "\n", strlen("\n"));
+        }
+    }
+
+    for(int i = 1; i < selected_lines_count; i++) {
+        l = buffer_line_get(v->buff, line_idx+i);
+        if(str_is_empty(&l->text)) {
+            str_push(&selected, "\n", strlen("\n"));
+        }
+        else if(view_selection_line_fully_selected(vs, line_idx+i)) {
+            str_push(&selected, str_as_cstr(&l->text), str_cstr_len(&l->text));
+            str_push(&selected, "\n", strlen("\n"));
+        } else if(view_selection_line_tail_partially_selected(vs, 0, line_idx + i)) {
+
+            size_t substr_len = vs->end.off_x;
+            if(substr_len == str_len(&l->text)) {
+                str_push(&selected, str_as_cstr(&l->text), str_cstr_len(&l->text));
+                str_push(&selected, "\n", strlen("\n"));
+            } else {
+                Str head = str_head(&l->text, substr_len+2);
+                str_push(&selected, str_as_cstr(&head), str_cstr_len(&head));
+            }
+        } else {
+            assert(0 && "this is weird");
+        }
+    }
+
+    return selected;
+}
 
 void view_move_cursor_start(struct View *v) {
     view_set_cursor(v, 0, v->view_cursor.off_y);
@@ -649,7 +715,13 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
     Style line_num_style = style_fg(base_style, colour_vt(VT_GRA));
     Style highlight = style_bg(base_style, colour_vt(VT_BLU));
 
-    struct ViewSelection vs = view_selection_balance(&VISUAL_SELECTION);
+    struct ViewSelection vs = view_selection_empty();
+
+    if(is_some(v->selection_end)) {
+        vs = view_selection_from_cursors(
+            v->view_cursor,
+            *as_ptr(v->selection_end));
+    }
 
     // render full lines
     size_t count;
@@ -677,7 +749,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
 
         if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
             if(write_escaped(&highlight, l, char_offset, len+char_offset) == -1) return -1;
-        } else if(view_selection_line_partially_selected(&vs, char_offset, count + v->line_off)) {
+        } else if(view_selection_line_tail_partially_selected(&vs, char_offset, count + v->line_off)) {
             for(size_t i = 0;i < (size_t)len; i++) {
                 if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
                     if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
@@ -717,7 +789,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
 
             if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
                 if(write_escaped(&highlight, l, char_offset, len+char_offset) == -1) return -1;
-            } else if(view_selection_line_partially_selected(&vs, char_offset, count + v->line_off)) {
+            } else if(view_selection_line_tail_partially_selected(&vs, char_offset, count + v->line_off)) {
                 for(size_t i = 0;i < (size_t)len; i++) {
                     if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
                         if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
@@ -1474,16 +1546,13 @@ int command_handle_key(struct KeyEvent *e) {
 
 int visual_enter(void) {
     struct View *v = tab_active_view(tab_active());
-    VISUAL_SELECTION.start = view_get_cursor(v);
-    VISUAL_SELECTION.end = view_get_cursor(v);
+    set_some(&v->selection_end, view_get_cursor(v));
     return 0;
 }
 
 int visual_leave(void) {
-    VISUAL_SELECTION.start.off_x = SIZE_MAX;
-    VISUAL_SELECTION.start.off_y = SIZE_MAX;
-    VISUAL_SELECTION.end.off_x = SIZE_MAX;
-    VISUAL_SELECTION.end.off_y = SIZE_MAX;
+    struct View *v = tab_active_view(tab_active());
+    set_none(&v->selection_end);
     return 0;
 }
 
@@ -1498,22 +1567,27 @@ int visual_handle_key(struct KeyEvent *e) {
             case KC_ARRDOWN:
             case 'j': {
                 view_move_cursor(v, 0,+1);
-                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
             case KC_ARRUP:
             case 'k': {
                 view_move_cursor(v, 0,-1);
-                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
             case KC_ARRLEFT:
             case 'h': {
                 view_move_cursor(v, -1,0);
-                VISUAL_SELECTION.end = view_get_cursor(v);
             } break;
             case KC_ARRRIGHT:
             case 'l': {
                 view_move_cursor(v, +1,0);
-                VISUAL_SELECTION.end = view_get_cursor(v);
+            } break;
+            case 'p': {
+                struct ViewSelection vs = view_selection_from_cursors(
+                    *as_ptr(v->selection_end),
+                    v->view_cursor
+                );
+                Str selected = view_selection_get_text(&vs, v);
+                message_print("%s", str_as_cstr(&selected));
+                str_free(&selected);
             } break;
         }
     }
@@ -1578,11 +1652,13 @@ int mode_change(enum Mode mode) {
 }
 
 static size_t message_line_render_height(struct winsize *ws) {
-    size_t msg_line_height = 1;
+    size_t msg_line_height = MESSAGE.buff->lines.len;
     for(size_t i = 0; i < MESSAGE.buff->lines.len; i++) {
         struct Line *message_line = buffer_line_get(MESSAGE.buff, i);
         msg_line_height += message_line->render_width / ws->ws_col;
     }
+    // always render at least 1 line
+    if(msg_line_height == 0) return 1;
     return msg_line_height;
 }
 

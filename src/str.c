@@ -389,6 +389,9 @@ Str str_head(const Str *s, size_t idx) {
     }
 
     size_t byte_off = str_get_char_byte_idx(s, idx);
+    if(byte_off == SIZE_MAX) {
+        assert(0 && "Index out of range");
+    }
     v.len = byte_off;
 
     return (Str) {

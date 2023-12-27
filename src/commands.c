@@ -21,6 +21,13 @@ int exec_command(char *command) {
         token = strtok(NULL, sep);
         editor_write(token);
         return 0;
+    } else if(!strcmp(token, "wq")) {
+        // a null token is fine
+        token = strtok(NULL, sep);
+        editor_write(token);
+
+        editor_quit();
+        return 0;
     } else if(!strcmp(token, "e")) {
         // a null token is fine
         token = strtok(NULL, sep);

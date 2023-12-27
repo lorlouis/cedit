@@ -12,6 +12,7 @@
 #include "utf.h"
 
 struct termios INITIAL = {0};
+static int REDRAW = 0;
 
 void term_restore(void) {
     if(tcsetattr(STDOUT_FILENO, TCSANOW, &INITIAL)) {
@@ -60,6 +61,7 @@ void cleanup_err(int _i __attribute__((unused))) {
 // i parameter is ignored
 void on_resize(int i) {
     (void)i;
+    REDRAW=1;
     int winsize_call = TIOCGWINSZ;
     int res = ioctl(STDOUT_FILENO, winsize_call, &WS);
     if(-1 == res) {
@@ -137,7 +139,8 @@ int main(int argc, const char **argv) {
 
     editor_render(&WS);
     while(RUNNING) {
-        if(handle_keys()) {
+        if(handle_keys() || REDRAW) {
+            REDRAW = 0;
             editor_render(&WS);
         }
         usleep(10);
