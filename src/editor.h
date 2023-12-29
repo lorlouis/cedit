@@ -334,6 +334,8 @@ void editor_split_open(const char *path, enum FileMode fm, enum SplitDir split);
 
 void editor_write(const char *path);
 
-int clipboard_set(char *s, size_t len);
+int clipboard_set(const char *s, size_t len);
+
+int clipboard_get(Str *s);
 
 #endif

@@ -245,6 +245,10 @@ int buffer_num_width(struct Buffer *buff) {
 
 struct Line *buffer_line_get(struct Buffer *buff, size_t idx) {
     buff->lines.type_size = sizeof(struct Line);
+    if(idx == buff->lines.len) {
+        struct Line new_line = line_new();
+        vec_push(&buff->lines, &new_line);
+    }
     return VEC_GET(struct Line, &buff->lines, idx);
 }
 
@@ -1390,6 +1394,15 @@ int normal_handle_key(struct KeyEvent *e) {
             case ':': {
                 mode_change(M_Command);
             } break;
+            case 'p': {
+                Str selection = str_new();
+                if(clipboard_get(&selection)) {
+                    message_print("E: failed to paste: '%s'", strerror(errno));
+                } else {
+                    view_write(v, str_as_cstr(&selection), str_cstr_len(&selection));
+                }
+                str_free(&selection);
+            } break;
             default:
                 break;
         }
@@ -1589,17 +1602,18 @@ int visual_handle_key(struct KeyEvent *e) {
             case 'l': {
                 view_move_cursor(v, +1,0);
             } break;
-            case 'p': {
+            case 'y': {
                 struct ViewSelection vs = view_selection_from_cursors(
                     *as_ptr(v->selection_end),
                     v->view_cursor
                 );
                 Str selected = view_selection_get_text(&vs, v);
-                message_print("%s", str_as_cstr(&selected));
-                str_free(&selected);
-            } break;
-            case 'y': {
-                assert(!clipboard_set("hello world", sizeof("hello world")));
+                if(clipboard_set(str_as_cstr(&selected), str_cstr_len(&selected))) {
+                    message_print("E: failed to copy: '%s'", strerror(errno));
+                }
+                v->view_cursor = *as_ptr(v->selection_end);
+                set_none(&v->selection_end);
+                mode_change(M_Normal);
             } break;
         }
     }
@@ -1701,7 +1715,7 @@ int active_line_render(struct winsize *ws) {
             ws->ws_col,
             ' ');
 
-    set_cursor_pos(0, ws->ws_row - 2);
+    set_cursor_pos(0, ws->ws_row - 1 - message_line_render_height(ws));
     style_fmt(
             &active_line_style,
             STDOUT_FILENO,
@@ -1929,13 +1943,15 @@ void editor_open(const char *path, enum FileMode fm) {
 
 typedef struct {
     int stdin_fd;
-    int out_fd;
+    int stdout_fd;
+    int stderr_fd;
     pid_t pid;
 } SpawnHandle;
 
 void spawn_handle_free(SpawnHandle *handle) {
     close(handle->stdin_fd);
-    close(handle->out_fd);
+    close(handle->stdout_fd);
+    close(handle->stderr_fd);
 }
 
 int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
@@ -1944,12 +1960,40 @@ int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
     int stact_lock = 0;
     int ret;
 
-    while(!waitpid(handle->pid, &stact_lock, WNOHANG)) {
-        ret = read(handle->out_fd, buffer, BUFFER_SIZE);
-        if(ret < 0) return -1;
-        str_push(out, buffer, ret);
-        usleep(5000);
-    }
+    close(handle->stdin_fd);
+
+    int fds_len = 2;
+    struct pollfd fds[2] = {0};
+    // put stderr first in the list to collect its output first
+    fds[0].fd = handle->stderr_fd;
+    fds[0].events = POLLIN;
+
+    fds[1].fd = handle->stdout_fd;
+    fds[1].events = POLLIN;
+
+    do {
+        ret = poll(fds, fds_len, 10);
+        if(ret > 0) {
+            for(int i = 0; i < fds_len; i++) {
+                if(fds[i].revents & POLLIN) {
+                    ret = read(fds[i].fd, buffer, BUFFER_SIZE);
+                    if(ret < 0) return -1;
+                    str_push(out, buffer, ret);
+                }
+                if(fds[i].revents & POLLNVAL) {
+                    assert(0 && "pipe invalid");
+                }
+                if(fds[i].revents & POLLHUP) {
+                    // WARN(louis) this code assumes there are only 2 fds
+                    if(i == 0) {
+                        fds[0] = fds[1];
+                        i = -1;
+                    }
+                    fds_len -= 1;
+                }
+            }
+        }
+    } while(!waitpid(handle->pid, &stact_lock, WNOHANG));
     return 0;
 }
 
@@ -1990,6 +2034,13 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     int stdout_out = pipdes[0];
     int stdout_in = pipdes[1];
 
+    if(pipe(pipdes)) {
+        return -1;
+    }
+
+    int stderr_out = pipdes[0];
+    int stderr_in = pipdes[1];
+
     posix_spawn_file_actions_t file_actions;
     posix_spawn_file_actions_init(&file_actions);
 
@@ -1999,14 +2050,17 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     posix_spawn_file_actions_adddup2(&file_actions, stdin_out, STDIN_FILENO);
     posix_spawn_file_actions_addclose(&file_actions, stdin_out);
 
-    // replace stdout and stderr
+    // replace stdout
     posix_spawn_file_actions_addclose(&file_actions, STDOUT_FILENO);
     posix_spawn_file_actions_addclose(&file_actions, stdout_out);
     posix_spawn_file_actions_adddup2(&file_actions, stdout_in, STDOUT_FILENO);
     posix_spawn_file_actions_addclose(&file_actions, stdout_in);
+
     // replace stderr
     posix_spawn_file_actions_addclose(&file_actions, STDERR_FILENO);
-    posix_spawn_file_actions_adddup2(&file_actions, STDOUT_FILENO, STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, stderr_out);
+    posix_spawn_file_actions_adddup2(&file_actions, stderr_in, STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, stderr_in);
 
     posix_spawnattr_t attrp;
     posix_spawnattr_init(&attrp);
@@ -2015,7 +2069,7 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
             &child_pid,
             *VEC_GET(char*, &args, 0),
             &file_actions, &attrp,
-            VEC_GET(char*, &args, 1),
+            VEC_GET(char*, &args, 0),
             environ);
 
     // cleanup resources
@@ -2024,22 +2078,24 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     xfree(command_buffer);
     close(stdin_out);
     close(stdout_in);
+    close(stderr_in);
 
     if(res) return res;
 
     // set the out parameter
     spawn_handle->pid = child_pid;
     spawn_handle->stdin_fd = stdin_in;
-    spawn_handle->out_fd = stdout_out;
+    spawn_handle->stdout_fd = stdout_out;
+    spawn_handle->stderr_fd = stderr_out;
     return 0;
 }
 
-int clipboard_set(char *s, size_t len) {
+int clipboard_set(const char *s, size_t len) {
 
     SpawnHandle handle = {0};
 
     int res = spawn_captured(CONFIG.copy_command, &handle);
-    assert(!res);
+    if(res) return res;
 
 
     write(handle.stdin_fd, s, len);
@@ -2059,8 +2115,21 @@ int clipboard_set(char *s, size_t len) {
     return 0;
 }
 
-Str clipboard_get(char *s, size_t len) {
+int clipboard_get(Str *s) {
+    SpawnHandle handle = {0};
 
+    int res = spawn_captured(CONFIG.paste_command, &handle);
+    if(res) return res;
+
+    res = spawn_handle_wait_collect_output(&handle, s);
+
+    if(res && !str_is_empty(s)) {
+        message_print("%.*s", str_cstr_len(s), str_as_cstr(s));
+        str_clear(s);
+        return res;
+    }
+
+    return 0;
 }
 
 void editor_init(void) {
