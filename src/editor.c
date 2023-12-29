@@ -379,8 +379,6 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
     if(len == 0) return 0;
     v->buff->dirty = 1;
 
-    size_t off = 0;
-
     size_t line_idx = v->view_cursor.off_y;
 
     // make sure there is a line under the cursor
@@ -389,55 +387,43 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         buffer_line_insert(v->buff, line_idx, line_new());
     }
 
-    struct Line *line = buffer_line_get(v->buff, line_idx);
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    // safe end of line if the cursor is not at the end of that line
     char *end_of_line = 0;
-    size_t end_of_line_size = 0;
-    size_t source_line = v->view_cursor.off_y;
+    size_t end_of_line_len = 0;
+    if(v->view_cursor.off_x < str_len(&l->text)) {
+        Str tail = str_tail(&l->text, v->view_cursor.off_x);
+        end_of_line_len = str_cstr_len(&tail);
+        end_of_line = calloc(end_of_line_len, sizeof(char));
+        memcpy(end_of_line, str_as_cstr(&tail), end_of_line_len);
+        line_trunk(l, v->view_cursor.off_x);
+    }
 
-    // save end of line and null terminator
-    end_of_line_size = str_cstr_len(&line->text) - str_get_char_byte_idx(&line->text, v->view_cursor.off_x);
-    end_of_line = xcalloc(end_of_line_size, sizeof(char));
-
-    memcpy(end_of_line, str_as_cstr(&line->text) + str_get_char_byte_idx(&line->text, v->view_cursor.off_x), end_of_line_size);
-
+    size_t last_off = 0;
+    size_t off = 0;
     while(off < len) {
-        size_t start = off;
-        while(s[off] != '\n' && s[off] != '\0') off++;
-        size_t size = off - start;
-        size_t cursor = str_get_char_byte_idx(&line->text, v->view_cursor.off_x);
-
-        size_t original_len = str_len(&line->text);
-
-        // copy the new block on top of the old stuff
-        line_insert_at(line, v->view_cursor.off_x, s + start, size);
-
-        size_t new_len = str_len(&line->text);
-
-        v->view_cursor.off_x += new_len - original_len;
-
+        while(off < len && s[off] != '\n' && s[off] != '\0') off += 1;
+        line_append(l, s + last_off, off - last_off);
+        v->view_cursor.off_x = str_len(&l->text);
         if(s[off] == '\n') {
-            if(cursor <= str_len(&line->text)) {
-                line_trunk(line, cursor);
-            }
-            off++;
-            // insert line under cursor
+            off += 1;
             buffer_line_insert(v->buff, v->view_cursor.off_y+1, line_new());
-            // select the new line
             v->view_cursor.off_y += 1;
-            line = buffer_line_get(v->buff, v->view_cursor.off_y);
+            // select the new line
+            l = buffer_line_get(v->buff, v->view_cursor.off_y);
+            // move cursor at the end of that line
+            v->view_cursor.off_x = str_len(&l->text);
+        }
+        last_off = off;
+    }
 
-            // move cursor to the end of that line
-            v->view_cursor.off_x = str_len(&line->text);
-        }
+    // append the saved end of line if there is one
+    if(end_of_line) {
+        line_append(l, end_of_line, end_of_line_len);
+        free(end_of_line);
     }
-    if(end_of_line_size) {
-        // write end of line at the end of the current cursor line
-        // if the line changed
-        if(source_line != v->view_cursor.off_y) {
-            line_append(line, end_of_line, end_of_line_size);
-        }
-    }
-    free(end_of_line);
+
     return 0;
 }
 
@@ -1403,6 +1389,9 @@ int normal_handle_key(struct KeyEvent *e) {
                 }
                 str_free(&selection);
             } break;
+            case 'u': {
+                view_write(v, "hello\nnewline", sizeof("hello\nnewline") -1);
+            } break;
             default:
                 break;
         }
@@ -1733,7 +1722,7 @@ int active_line_render(struct winsize *ws) {
 
 int editor_render(struct winsize *ws) {
     if(!RUNNING) return 0;
-    //write(STDOUT_FILENO, CUR_HIDE, sizeof(CUR_HIDE) -1);
+    write(STDOUT_FILENO, CUR_HIDE, sizeof(CUR_HIDE) -1);
 
     struct AbsoluteCursor ac = {
         .col = 1,
@@ -1756,7 +1745,7 @@ int editor_render(struct winsize *ws) {
         }
     }
     set_cursor_pos(ac.col, ac.row);
-    //write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
+    write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
     return 0;
 }
 
