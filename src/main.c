@@ -146,7 +146,6 @@ int main(int argc, const char **argv) {
         }
         usleep(CONFIG.poll_delay);
     }
-
     editor_teardown();
 
     return 0;

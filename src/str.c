@@ -128,7 +128,7 @@ void vec_clear(Vec *v) {
     assert(v->cap != SIZE_MAX && "vec is readonly");
     if(v->free_fn) {
         for(size_t i = 0; i < v->len; i++) {
-            v->free_fn(v->buf + i * v->type_size);
+            v->free_fn(vec_get(v, i));
         }
     }
     memset(v->buf, 0, v->len * v->type_size);

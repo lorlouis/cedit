@@ -106,12 +106,14 @@ int message_append(const char *fmt, ...) {
     ret = vasprintf(&formatted, fmt, args);
     va_end(args);
     if(ret < 0) {
+        va_end(args);
         return -1;
     }
     s_size = (size_t)ret;
 
     view_write(&MESSAGE, formatted, s_size);
     free(formatted);
+    va_end(args);
 
     return s_size;
 }
@@ -186,6 +188,11 @@ int buffer_dump(
     return 0;
 }
 
+struct Buffer buffer_new(void) {
+    struct Buffer buff = {0};
+    buff.lines = VEC_NEW(struct Line, (void(*)(void*))line_free);
+    return buff;
+}
 
 // Returns -1 on error and sets errno
 int buffer_init_from_path(
@@ -197,7 +204,7 @@ int buffer_init_from_path(
     FILE *f = filemode_open(fm, path);
     if(!f) return -1;
 
-    Vec lines = VEC_NEW(struct Line, (void(*)(void*))line_free);
+    *buff = buffer_new();
 
     char *line=0;
     size_t cap=0;
@@ -211,7 +218,7 @@ int buffer_init_from_path(
         }
 
         struct Line l = line_from_cstr(line);
-        vec_push(&lines, &l);
+        vec_push(&buff->lines, &l);
     }
     free(line);
 
@@ -225,14 +232,13 @@ int buffer_init_from_path(
     buff->in.u.file.fm = fm;
     buff->in.u.file.path = str_from_cstr(path);
 
-    buff->lines = lines;
     buff->rc = 0;
     buff->fm = fm;
 
     return 0;
 
     err:
-        vec_cleanup(&lines);
+        vec_cleanup(&buff->lines);
         fclose(f);
         return -1;
 }
@@ -366,7 +372,7 @@ void view_clear(struct View *v) {
     v->view_cursor.off_x = 0;
     v->view_cursor.off_y = 0;
     for(size_t i = 0; i < v->buff->lines.len; i++) {
-        line_clear(buffer_line_get(v->buff, i));
+        line_free(buffer_line_get(v->buff, i));
     }
     v->buff->lines.len = 0;
 }
@@ -1599,10 +1605,12 @@ int visual_handle_key(struct KeyEvent *e) {
                 Str selected = view_selection_get_text(&vs, v);
                 if(clipboard_set(str_as_cstr(&selected), str_cstr_len(&selected))) {
                     message_print("E: failed to copy: '%s'", strerror(errno));
+                } else {
+                    v->view_cursor = *as_ptr(v->selection_end);
+                    set_none(&v->selection_end);
+                    mode_change(M_Normal);
                 }
-                v->view_cursor = *as_ptr(v->selection_end);
-                set_none(&v->selection_end);
-                mode_change(M_Normal);
+                str_free(&selected);
             } break;
         }
     }
@@ -2065,6 +2073,7 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     posix_spawn_file_actions_destroy(&file_actions);
     posix_spawnattr_destroy(&attrp);
     xfree(command_buffer);
+    vec_cleanup(&args);
     close(stdin_out);
     close(stdout_in);
     close(stderr_in);
@@ -2123,10 +2132,12 @@ int clipboard_get(Str *s) {
 
 void editor_init(void) {
     MESSAGE.buff = calloc(1, sizeof(struct Buffer));
+    *MESSAGE.buff = buffer_new();
     MESSAGE.options.no_line_num = 1;
 
     if(TABS.len == 0) {
         struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+        *buff = buffer_new();
         struct View view = view_new(buff);
         struct Window win = window_new();
         window_view_push(&win, view);
