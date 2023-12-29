@@ -114,6 +114,47 @@ enum MaybeVariant {
 #define Some(...) {.o = Some, .u.some = __VA_ARGS__ }
 #define set_some(v, ...) {(v)->o = Some; (v)->u.some = __VA_ARGS__; }
 #define set_none(v) {(v)->o = None;}
+#define match_maybe(maybe, some_name, some_block, none_block) switch((maybe)->o) {\
+        case Some: { \
+            typeof((maybe)->u.some) *some_name = &(maybe)->u.some; \
+            { some_block }\
+        }; break; \
+        case None: { \
+            { none_block }\
+        }; break; \
+    }
+
+enum ResultVariant {
+    Ok,
+    Err,
+};
+
+#define Result(OK_TY, ERR_TY) \
+   struct Result##OK_TY##ERR_TY { \
+       enum ResultVariant o; \
+       union { \
+           ERR_TY err; \
+           OK_TY ok; \
+        } u; \
+    }
+
+#define is_ok(m) ((m).o == Ok)
+#define is_err(m) ((m).o == Err)
+#define as_(m) ((m).o == Ok ? &(m).u.ok : 0)
+#define Ok(...) {.o = Ok, .u.ok = __VA_ARGS__ }
+#define Err(...) {.o = Err, .u.err = __VA_ARGS__ }
+#define set_ok(v, ...) {(v)->o = Ok; (v)->u.ok = __VA_ARGS__; }
+#define set_err(v, ...) {(v)->o = Err; (v)->u.err = __VA_ARGS__; }
+#define match_result(res, ok_name, ok_block, err_name, err_block) switch((res)->o) {\
+        case Ok: { \
+            typeof((res)->u.ok) *ok_name = &(res)->u.ok; \
+            { ok_block }\
+        }; break; \
+        case Err: { \
+            typeof((res)->u.err) *err_name = &(res)->u.err; \
+            { err_block }\
+        }; break; \
+    }
 
 // View Port is computed in absolute screen coordinates
 typedef struct {
@@ -293,5 +334,6 @@ void editor_split_open(const char *path, enum FileMode fm, enum SplitDir split);
 
 void editor_write(const char *path);
 
+int clipboard_set(char *s, size_t len);
 
 #endif

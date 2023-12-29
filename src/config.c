@@ -7,8 +7,8 @@ const struct config CONFIG = {
     .copy_command = "pbcopy",
     .paste_command = "pbpaste",
 #else
-    .copy_command = "xclip -i",
-    .paste_command = "xclip -o",
+    .copy_command = "xsel -b -i",
+    .paste_command = "xsel -b",
 #endif
 };
 

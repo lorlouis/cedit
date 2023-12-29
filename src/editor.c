@@ -5,6 +5,7 @@
 #include "commands.h"
 #include "config.h"
 
+#include <spawn.h>
 #include <wordexp.h>
 #include <stdarg.h>
 #include <string.h>
@@ -14,6 +15,11 @@
 #include <unistd.h>
 #include <wctype.h>
 #include <math.h>
+#include <sys/wait.h>
+#include <poll.h>
+
+// access this process' env
+extern char **environ;
 
 struct winsize WS = {0};
 
@@ -717,11 +723,14 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
 
     struct ViewSelection vs = view_selection_empty();
 
-    if(is_some(v->selection_end)) {
-        vs = view_selection_from_cursors(
-            v->view_cursor,
-            *as_ptr(v->selection_end));
-    }
+    match_maybe(&v->selection_end,
+        end, {
+            vs = view_selection_from_cursors(
+                v->view_cursor,
+                *end);
+            },
+        {}
+    );
 
     // render full lines
     size_t count;
@@ -1589,6 +1598,9 @@ int visual_handle_key(struct KeyEvent *e) {
                 message_print("%s", str_as_cstr(&selected));
                 str_free(&selected);
             } break;
+            case 'y': {
+                assert(!clipboard_set("hello world", sizeof("hello world")));
+            } break;
         }
     }
     return 0;
@@ -1913,6 +1925,142 @@ void editor_open(const char *path, enum FileMode fm) {
 
     view_free(active_view);
     *active_view = new_view;
+}
+
+typedef struct {
+    int stdin_fd;
+    int out_fd;
+    pid_t pid;
+} SpawnHandle;
+
+void spawn_handle_free(SpawnHandle *handle) {
+    close(handle->stdin_fd);
+    close(handle->out_fd);
+}
+
+int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
+    #define BUFFER_SIZE 128
+    char buffer[BUFFER_SIZE];
+    int stact_lock = 0;
+    int ret;
+
+    while(!waitpid(handle->pid, &stact_lock, WNOHANG)) {
+        ret = read(handle->out_fd, buffer, BUFFER_SIZE);
+        if(ret < 0) return -1;
+        str_push(out, buffer, ret);
+        usleep(5000);
+    }
+    return 0;
+}
+
+int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
+    int pipdes[2] = {0};
+    pid_t child_pid = 0;
+
+    Vec args = VEC_NEW(char*, 0);
+    // strtok modifies the string
+    size_t command_size = strlen(command)+1;
+    char *command_buffer = malloc(command_size);
+    memcpy(command_buffer, command, command_size);
+
+    char *token = strtok(command_buffer, " ");
+    while(token) {
+        vec_push(&args, &token);
+        token = strtok(0, " ");
+    }
+
+    if(args.len == 0) {
+        xfree(command_buffer);
+        return -1;
+    }
+    char *null = NULL;
+    vec_push(&args, &null);
+
+    if(pipe(pipdes)) {
+        return -1;
+    }
+
+    int stdin_out = pipdes[0];
+    int stdin_in = pipdes[1];
+
+    if(pipe(pipdes)) {
+        return -1;
+    }
+
+    int stdout_out = pipdes[0];
+    int stdout_in = pipdes[1];
+
+    posix_spawn_file_actions_t file_actions;
+    posix_spawn_file_actions_init(&file_actions);
+
+    // replace stdin
+    posix_spawn_file_actions_addclose(&file_actions, STDIN_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, stdin_in);
+    posix_spawn_file_actions_adddup2(&file_actions, stdin_out, STDIN_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, stdin_out);
+
+    // replace stdout and stderr
+    posix_spawn_file_actions_addclose(&file_actions, STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, stdout_out);
+    posix_spawn_file_actions_adddup2(&file_actions, stdout_in, STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, stdout_in);
+    // replace stderr
+    posix_spawn_file_actions_addclose(&file_actions, STDERR_FILENO);
+    posix_spawn_file_actions_adddup2(&file_actions, STDOUT_FILENO, STDERR_FILENO);
+
+    posix_spawnattr_t attrp;
+    posix_spawnattr_init(&attrp);
+
+    int res = posix_spawnp(
+            &child_pid,
+            *VEC_GET(char*, &args, 0),
+            &file_actions, &attrp,
+            VEC_GET(char*, &args, 1),
+            environ);
+
+    // cleanup resources
+    posix_spawn_file_actions_destroy(&file_actions);
+    posix_spawnattr_destroy(&attrp);
+    xfree(command_buffer);
+    close(stdin_out);
+    close(stdout_in);
+
+    if(res) return res;
+
+    // set the out parameter
+    spawn_handle->pid = child_pid;
+    spawn_handle->stdin_fd = stdin_in;
+    spawn_handle->out_fd = stdout_out;
+    return 0;
+}
+
+int clipboard_set(char *s, size_t len) {
+
+    SpawnHandle handle = {0};
+
+    int res = spawn_captured(CONFIG.copy_command, &handle);
+    assert(!res);
+
+
+    write(handle.stdin_fd, s, len);
+    close(handle.stdin_fd);
+
+    Str output = str_new();
+
+    res = spawn_handle_wait_collect_output(&handle, &output);
+
+    if(res || !str_is_empty(&output)) {
+        message_print("%.*s", str_cstr_len(&output), str_as_cstr(&output));
+        str_free(&output);
+        return res;
+    }
+    str_free(&output);
+
+    return 0;
+}
+
+Str clipboard_get(char *s, size_t len) {
+
 }
 
 void editor_init(void) {

@@ -6,6 +6,7 @@
 #include <sys/termios.h>
 #include <string.h>
 
+#include "config.h"
 #include "termkey.h"
 #include "vt.h"
 #include "editor.h"
@@ -143,7 +144,7 @@ int main(int argc, const char **argv) {
             REDRAW = 0;
             editor_render(&WS);
         }
-        usleep(10);
+        usleep(CONFIG.poll_delay);
     }
 
     editor_teardown();
