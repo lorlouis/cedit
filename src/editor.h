@@ -336,9 +336,9 @@ int message_print(const char *fmt, ...);
 
 void editor_quit_all(void);
 
-void editor_quit(void);
+void editor_quit(int no_confirm);
 
-void editor_open(const char *path, enum FileMode fm);
+void editor_open(const char *path, enum FileMode fm, int no_confirm);
 
 void editor_tabnew(const char *path, enum FileMode fm);
 

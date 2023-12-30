@@ -5,6 +5,7 @@
 #include "commands.h"
 #include "config.h"
 
+
 #include <regex.h>
 #include <spawn.h>
 #include <wordexp.h>
@@ -186,6 +187,7 @@ int buffer_dump(
     }
 
     fclose(f);
+    buff->dirty = 0;
     return 0;
 }
 
@@ -1285,6 +1287,7 @@ int view_erase(struct View *v) {
 
     struct Line *line = buffer_line_get(v->buff, v->view_cursor.off_y);
     if(cursor > 0) {
+        v->buff->dirty = 1;
         size_t start = cursor-1;
         if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
             _Bool is_a_tab = true;
@@ -1304,6 +1307,7 @@ int view_erase(struct View *v) {
         line_remove(line, start, cursor-1);
         v->view_cursor.off_x -= cursor - start;
     } else if(v->view_cursor.off_y > 0) {
+        v->buff->dirty = 1;
         struct Line *prev_line = buffer_line_get(v->buff, v->view_cursor.off_y -1);
         // move cursor to end of previous line
         v->view_cursor.off_x = str_len(&prev_line->text);
@@ -1828,13 +1832,21 @@ int editor_render(struct winsize *ws) {
     return 0;
 }
 
-void editor_quit_all(void) {
+void editor_quit_all() {
     RUNNING = 0;
 }
 
-void editor_quit(void) {
+void editor_quit(int no_confirm) {
     struct Tab *active_tab = tab_active();
+
     struct Window *active_window = tab_window_active(active_tab);
+    struct View *v = tab_active_view(tab_active());
+
+    if(!no_confirm && v->buff->rc == 0 && v->buff->dirty) {
+        message_print("E: modifications to this buffer would be lost");
+        return;
+    }
+
     window_close_view(active_window, -1);
 
     // remove the view
@@ -1992,12 +2004,26 @@ void editor_split_open(const char *path, enum FileMode fm, enum SplitDir split) 
     return;
 }
 
-void editor_open(const char *path, enum FileMode fm) {
-    assert(path && "TODO reload file if it has a path");
-
+void editor_open(const char *path, enum FileMode fm, int no_confirm) {
     struct Tab *active_tab = tab_active();
+
     struct Window *active_window = tab_window_active(active_tab);
     struct View *active_view = window_view_active(active_window);
+
+    if(!no_confirm && active_view->buff->rc == 0 && active_view->buff->dirty) {
+        message_print("E: modifications to this buffer would be lost");
+        return;
+    }
+
+    if(!path) {
+        switch(active_view->buff->in.ty) {
+            case INPUT_SCRATCH:
+                return;
+            case INPUT_FILE:
+                path = str_as_cstr(&active_view->buff->in.u.file.path);
+                break;
+        }
+    }
 
     struct View new_view = {0};
 
