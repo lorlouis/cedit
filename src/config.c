@@ -10,5 +10,6 @@ const struct config CONFIG = {
     .copy_command = "xsel -b -i",
     .paste_command = "xsel -b -o",
 #endif
+    .poll_delay = 25000,
 };
 

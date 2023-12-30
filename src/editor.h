@@ -68,6 +68,7 @@ typedef void (cleanup_fn)(void *data);
 struct Line {
     Str text;
     size_t render_width;
+    Vec syles;
 };
 
 // Null initialise {0} to get a scratch buffer
@@ -204,7 +205,6 @@ struct RenderPlan {
     int num_width;
     int prefix_width;
 };
-
 
 struct View {
     size_t line_off;
@@ -349,6 +349,8 @@ void editor_write(const char *path);
 int clipboard_set(const char *s, size_t len);
 
 int clipboard_get(Str *s);
+
+void cursor_jump_prev_search(void);
 
 void cursor_jump_next_search(void);
 

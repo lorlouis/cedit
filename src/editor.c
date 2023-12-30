@@ -1412,6 +1412,9 @@ int normal_handle_key(struct KeyEvent *e) {
             case 'n': {
                 cursor_jump_next_search();
             } break;
+            case 'N': {
+                cursor_jump_prev_search();
+            } break;
             default:
                 break;
         }
@@ -2244,27 +2247,56 @@ static void re_state_free(void) {
     vec_cleanup(&RE_STATE.matches);
 }
 
+
+void cursor_jump_prev_search(void) {
+    struct View *active_view = tab_active_view(tab_active());
+    // no matches
+    if(!RE_STATE.matches.len) return;
+
+    size_t idx;
+
+    match_maybe(&RE_STATE.selected,
+            selected, {
+                if(*selected == 0) {
+                    *selected = RE_STATE.matches.len -1;
+                }
+                else {
+                    *selected -= 1;
+                }
+            },
+            {
+                set_some(&RE_STATE.selected, 0);
+            }
+        );
+    // always set
+    idx = *as_ptr(&RE_STATE.selected);
+
+    struct ReMatch *match = vec_get(&RE_STATE.matches, idx);
+
+    active_view->view_cursor.off_x = match->col;
+    active_view->view_cursor.off_y = match->line;
+}
+
 void cursor_jump_next_search(void) {
     struct View *active_view = tab_active_view(tab_active());
-    if(RE_STATE.matches.len) {
-        size_t idx;
+    if(!RE_STATE.matches.len) return;
+    size_t idx;
 
-        match_maybe(&RE_STATE.selected,
-                selected, {
-                    *selected = (*selected + 1) % RE_STATE.matches.len;
-                },
-                {
-                    set_some(&RE_STATE.selected, 0);
-                }
-            );
-        // always set
-        idx = *as_ptr(&RE_STATE.selected);
+    match_maybe(&RE_STATE.selected,
+            selected, {
+                *selected = (*selected + 1) % RE_STATE.matches.len;
+            },
+            {
+                set_some(&RE_STATE.selected, 0);
+            }
+        );
+    // always set
+    idx = *as_ptr(&RE_STATE.selected);
 
-        struct ReMatch *match = vec_get(&RE_STATE.matches, idx);
+    struct ReMatch *match = vec_get(&RE_STATE.matches, idx);
 
-        active_view->view_cursor.off_x = match->col;
-        active_view->view_cursor.off_y = match->line;
-    }
+    active_view->view_cursor.off_x = match->col;
+    active_view->view_cursor.off_y = match->line;
 }
 
 void editor_find(const char *re_str) {
@@ -2290,7 +2322,9 @@ void editor_find(const char *re_str) {
     Maybe(size_t) selected = None();
 
     for(size_t i = 0; i < active_view->buff->lines.len; i++) {
-        struct Line *l = buffer_line_get(active_view->buff, i);
+        size_t line_idx = (i + RE_STATE.original_cursor.off_y) % active_view->buff->lines.len;
+
+        struct Line *l = buffer_line_get(active_view->buff, line_idx);
 
         // TODO(louis) maybe use REG_STARTED
         ret = regexec(RE_STATE.regex, str_as_cstr(&l->text), matches_size, matches, 0);
@@ -2303,7 +2337,7 @@ void editor_find(const char *re_str) {
             }
 
             struct ReMatch match = {
-                .line = i,
+                .line = line_idx,
                 .col = matches[j].rm_so,
                 .len = matches[j].rm_eo - matches[j].rm_so,
             };
@@ -2313,7 +2347,7 @@ void editor_find(const char *re_str) {
                     && match.col >= RE_STATE.original_cursor.off_x
                     && RE_STATE.matches.len > 0) {
 
-                set_some(&selected, RE_STATE.matches.len-1);
+                set_some(&selected, RE_STATE.matches.len);
             }
 
             vec_push(&RE_STATE.matches, &match);
