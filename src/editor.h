@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <regex.h>
 
 #ifdef __MACH__
     #include <sys/ttycom.h>
@@ -48,6 +49,7 @@ enum Mode {
     M_Window = 2,
     M_Command = 3,
     M_Visual = 4,
+    M_Search = 5,
 };
 
 struct ModeInterface {
@@ -108,10 +110,11 @@ enum MaybeVariant {
         }u;\
     }
 
-#define is_some(m) ((m).o == Some)
-#define is_none(m) ((m).o == None)
-#define as_ptr(m) ((m).o == Some ? &(m).u.some : 0)
+#define is_some(m) ((m)->o == Some)
+#define is_none(m) ((m)->o == None)
+#define as_ptr(m) ((m)->o == Some ? &(m)->u.some : 0)
 #define Some(...) {.o = Some, .u.some = __VA_ARGS__ }
+#define None() {.o = None, .u.none = 0 }
 #define set_some(v, ...) {(v)->o = Some; (v)->u.some = __VA_ARGS__; }
 #define set_none(v) {(v)->o = None;}
 #define match_maybe(maybe, some_name, some_block, none_block) switch((maybe)->o) {\
@@ -170,10 +173,19 @@ typedef struct ViewCursor {
     size_t off_y;
 } ViewCursor;
 
+struct ReState {
+    struct ViewCursor original_cursor;
+    regex_t *regex;
+    // `Vec` of `ReMatch`
+    Vec matches;
+    Maybe(size_t) selected;
+};
+
+extern struct ReState RE_STATE;
+
 struct ViewOpt {
     int no_line_num;
 };
-
 
 struct AbsoluteCursor {
     uint16_t col;
@@ -337,5 +349,9 @@ void editor_write(const char *path);
 int clipboard_set(const char *s, size_t len);
 
 int clipboard_get(Str *s);
+
+void cursor_jump_next_search(void);
+
+void editor_find(const char *re_str);
 
 #endif

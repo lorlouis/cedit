@@ -402,7 +402,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
     if(v->view_cursor.off_x < str_len(&l->text)) {
         Str tail = str_tail(&l->text, v->view_cursor.off_x);
         end_of_line_len = str_cstr_len(&tail);
-        end_of_line = calloc(end_of_line_len, sizeof(char));
+        end_of_line = xcalloc(end_of_line_len, sizeof(char));
         memcpy(end_of_line, str_as_cstr(&tail), end_of_line_len);
         line_trunk(l, v->view_cursor.off_x);
     }
@@ -1397,6 +1397,9 @@ int normal_handle_key(struct KeyEvent *e) {
             case ':': {
                 mode_change(M_Command);
             } break;
+            case '/': {
+                mode_change(M_Search);
+            } break;
             case 'p': {
                 Str selection = str_new();
                 if(clipboard_get(&selection)) {
@@ -1406,8 +1409,8 @@ int normal_handle_key(struct KeyEvent *e) {
                 }
                 str_free(&selection);
             } break;
-            case 'u': {
-                view_write(v, "hello\nnewline", sizeof("hello\nnewline") -1);
+            case 'n': {
+                cursor_jump_next_search();
             } break;
             default:
                 break;
@@ -1610,20 +1613,68 @@ int visual_handle_key(struct KeyEvent *e) {
             } break;
             case 'y': {
                 struct ViewSelection vs = view_selection_from_cursors(
-                    *as_ptr(v->selection_end),
+                    *as_ptr(&v->selection_end),
                     v->view_cursor
                 );
                 Str selected = view_selection_get_text(&vs, v);
                 if(clipboard_set(str_as_cstr(&selected), str_cstr_len(&selected))) {
                     message_print("E: failed to copy: '%s'", strerror(errno));
                 } else {
-                    v->view_cursor = *as_ptr(v->selection_end);
+                    v->view_cursor = *as_ptr(&v->selection_end);
                     set_none(&v->selection_end);
                     mode_change(M_Normal);
                 }
                 str_free(&selected);
             } break;
         }
+    }
+    return 0;
+}
+
+int search_enter(void) {
+    struct View *active_view = tab_active_view(tab_active());
+    RE_STATE.original_cursor = active_view->view_cursor;
+
+    message_print("/");
+    insert_enter();
+    return 0;
+}
+
+int search_leave(void) {
+    insert_leave();
+    return 0;
+}
+
+int search_handle_key(struct KeyEvent *e) {
+    // TODO(louis) handle command buffer here
+    if(e->modifier == 0) {
+        if(e->key == '\e') {
+            struct View *v = tab_active_view(tab_active());
+            v->view_cursor = RE_STATE.original_cursor;
+            mode_change(M_Normal);
+            return 0;
+        } else if(e->key == KC_BACKSPACE) {
+            // do not erase the leading ':'
+            if(MESSAGE.view_cursor.off_x > 1) {
+                view_erase(&MESSAGE);
+            }
+            return 0;
+        } else if(e->key == '\n') {
+            mode_change(M_Normal);
+            return 0;
+        }
+    }
+    switch(e->key) {
+        default: {
+            char bytes[4] = {0};
+            int len = utf32_to_utf8(e->key, bytes, 4);
+            assert(len >= 1);
+            message_append("%.*s", len, bytes);
+            struct Line *line = buffer_line_get(MESSAGE.buff, 0);
+            // this only checks the first line
+            editor_find(str_as_cstr(&line->text)+1);
+            cursor_jump_next_search();
+        } break;
     }
     return 0;
 }
@@ -1658,6 +1709,12 @@ static struct ModeInterface MODES[] = {
         .handle_key = visual_handle_key,
         .on_enter = visual_enter,
         .on_leave = visual_leave,
+    },
+    (struct ModeInterface){
+        .mode_str = "SEA",
+        .handle_key = search_handle_key,
+        .on_enter = search_enter,
+        .on_leave = search_leave,
     },
 };
 
@@ -1861,7 +1918,7 @@ void editor_write(const char *path) {
 
 // Attempts to open a view, all errors, if any will be logged in the message line
 int view_from_path(const char *path, enum FileMode fm, struct View *v) {
-    struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+    struct Buffer *buff = xcalloc(1, sizeof(struct Buffer));
 
     char *expanded = 0;
     if(path_expand(path, &expanded)) {
@@ -2142,12 +2199,12 @@ int clipboard_get(Str *s) {
 }
 
 void editor_init(void) {
-    MESSAGE.buff = calloc(1, sizeof(struct Buffer));
+    MESSAGE.buff = xcalloc(1, sizeof(struct Buffer));
     *MESSAGE.buff = buffer_new();
     MESSAGE.options.no_line_num = 1;
 
     if(TABS.len == 0) {
-        struct Buffer *buff = calloc(1, sizeof(struct Buffer));
+        struct Buffer *buff = xcalloc(1, sizeof(struct Buffer));
         *buff = buffer_new();
         struct View view = view_new(buff);
         struct Window win = window_new();
@@ -2157,28 +2214,113 @@ void editor_init(void) {
     }
 }
 
-void editor_teardown(void) {
-    vec_cleanup(&TABS);
-    view_free(&MESSAGE);
+struct ReMatch {
+    size_t line;
+    size_t col;
+    size_t len;
+};
+
+struct ReState RE_STATE = {0};
+
+void re_state_reset(void) {
+    if(RE_STATE.regex) {
+        regfree(RE_STATE.regex);
+        memset(RE_STATE.regex, 0, sizeof(regex_t));
+        vec_clear(&RE_STATE.matches);
+        set_none(&RE_STATE.selected);
+    } else {
+        RE_STATE.regex = xcalloc(1, sizeof(regex_t));
+        RE_STATE.matches = VEC_NEW(struct ReMatch, 0);
+        set_none(&RE_STATE.selected);
+    }
 }
 
-struct {
-    regex_t re;
+static void re_state_free(void) {
+    if(RE_STATE.regex) {
+        regfree(RE_STATE.regex);
+        xfree(RE_STATE.regex);
+        RE_STATE.regex = 0;
+    }
+    vec_cleanup(&RE_STATE.matches);
+}
 
-} RE_DATA = {0};
+void cursor_jump_next_search(void) {
+    struct View *active_view = tab_active_view(tab_active());
+    if(RE_STATE.matches.len) {
+        size_t idx;
 
-void editor_find(char *re_str) {
+        match_maybe(&RE_STATE.selected,
+                selected, {
+                    *selected = (*selected + 1) % RE_STATE.matches.len;
+                },
+                {
+                    set_some(&RE_STATE.selected, 0);
+                }
+            );
+        // always set
+        idx = *as_ptr(&RE_STATE.selected);
+
+        struct ReMatch *match = vec_get(&RE_STATE.matches, idx);
+
+        active_view->view_cursor.off_x = match->col;
+        active_view->view_cursor.off_y = match->line;
+    }
+}
+
+void editor_find(const char *re_str) {
+    struct View *active_view = tab_active_view(tab_active());
+
     int ret;
-    regex_t re = {0};
-    ret = regcomp(&re, re_str, REG_EXTENDED);
-
-    Vec matches = VEC_NEW(regmatch_t, 0);
+    re_state_reset();
+    ret = regcomp(RE_STATE.regex, re_str, REG_EXTENDED);
 
     if(ret) {
-        char *re_error = calloc(128, sizeof(char));
-        message_print("E: %s", regerror(ret, &re, re_error, 127));
+        char *re_error = xcalloc(128, sizeof(char));
+        message_print("E: %s", regerror(ret, RE_STATE.regex, re_error, 127));
         free(re_error);
     }
 
+
+    size_t matches_size = 50;
+    regmatch_t *matches = xcalloc(matches_size, sizeof(regmatch_t));
+
+    Maybe(size_t) selected = None();
+
+    for(size_t i = 0; i < active_view->buff->lines.len; i++) {
+        struct Line *l = buffer_line_get(active_view->buff, i);
+
+        // TODO(louis) maybe use REG_STARTED
+        ret = regexec(RE_STATE.regex, str_as_cstr(&l->text), matches_size, matches, 0);
+        if(ret == REG_NOMATCH) continue;
+
+        for(size_t j = 0; j < matches_size; j++) {
+            // this api sucks so bad
+            if(matches[j].rm_eo == -1) {
+                break;
+            }
+
+            struct ReMatch match = {
+                .line = i,
+                .col = matches[j].rm_so,
+                .len = matches[j].rm_eo - matches[j].rm_so,
+            };
+
+            if(is_none(&selected)
+                    && match.line >= RE_STATE.original_cursor.off_y
+                    && match.col >= RE_STATE.original_cursor.off_x
+                    && RE_STATE.matches.len > 0) {
+
+                set_some(&selected, RE_STATE.matches.len-1);
+            }
+
+            vec_push(&RE_STATE.matches, &match);
+        }
+    }
+    free(matches);
 }
 
+void editor_teardown(void) {
+    vec_cleanup(&TABS);
+    view_free(&MESSAGE);
+    re_state_free();
+}
