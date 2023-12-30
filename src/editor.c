@@ -2272,12 +2272,15 @@ void editor_find(const char *re_str) {
 
     int ret;
     re_state_reset();
-    ret = regcomp(RE_STATE.regex, re_str, REG_EXTENDED);
+    // Extended regexes break when a partial ( is present
+    ret = regcomp(RE_STATE.regex, re_str, 0);
 
     if(ret) {
         char *re_error = xcalloc(128, sizeof(char));
-        message_print("E: %s", regerror(ret, RE_STATE.regex, re_error, 127));
+        regerror(ret, RE_STATE.regex, re_error, 127);
+        message_print("E: %s", re_error);
         free(re_error);
+        return;
     }
 
 
