@@ -5,6 +5,7 @@
 #include "commands.h"
 #include "config.h"
 
+#include <regex.h>
 #include <spawn.h>
 #include <wordexp.h>
 #include <stdarg.h>
@@ -1350,10 +1351,16 @@ int normal_handle_key(struct KeyEvent *e) {
                 view_move_cursor_start(v);
                 view_write(v, "\n", sizeof("\n")-1);
                 view_move_cursor(v, 0, -1);
+                mode_change(M_Insert);
+            } break;
+            case 'A': {
+                view_move_cursor_end(v);
+                mode_change(M_Insert);
             } break;
             case 'o': {
                 view_move_cursor_end(v);
                 view_write(v, "\n", sizeof("\n")-1);
+                mode_change(M_Insert);
             } break;
             case 'v': {
                 mode_change(M_Visual);
@@ -1381,6 +1388,10 @@ int normal_handle_key(struct KeyEvent *e) {
                 view_move_cursor(v, +1,0);
             } break;
             case 'i': {
+                mode_change(M_Insert);
+            } break;
+            case 'a': {
+                view_move_cursor(v, +1,0);
                 mode_change(M_Insert);
             } break;
             case ':': {
@@ -2150,3 +2161,24 @@ void editor_teardown(void) {
     vec_cleanup(&TABS);
     view_free(&MESSAGE);
 }
+
+struct {
+    regex_t re;
+
+} RE_DATA = {0};
+
+void editor_find(char *re_str) {
+    int ret;
+    regex_t re = {0};
+    ret = regcomp(&re, re_str, REG_EXTENDED);
+
+    Vec matches = VEC_NEW(regmatch_t, 0);
+
+    if(ret) {
+        char *re_error = calloc(128, sizeof(char));
+        message_print("E: %s", regerror(ret, &re, re_error, 127));
+        free(re_error);
+    }
+
+}
+

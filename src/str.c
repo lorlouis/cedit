@@ -8,7 +8,7 @@
 
 const char *EMPTY_STR = "";
 
-static void vec_grow_to_fit(Vec *v, size_t count) {
+void vec_grow_to_fit(Vec *v, size_t count) {
     assert(v->cap != SIZE_MAX && "vec is readonly");
     if(v->cap < v->len + count) {
         size_t new_cap = v->cap ? v->cap * 2 : 2;
