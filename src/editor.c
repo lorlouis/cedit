@@ -1074,6 +1074,7 @@ void window_free(struct Window *w) {
     window_free_views(w);
     if(w->child) {
         window_free(w->child);
+        xfree(w->child);
         w->child = 0;
     }
     w->child = 0;
