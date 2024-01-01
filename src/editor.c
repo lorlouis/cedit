@@ -5,7 +5,6 @@
 #include "commands.h"
 #include "config.h"
 
-
 #include <regex.h>
 #include <spawn.h>
 #include <wordexp.h>
@@ -380,8 +379,38 @@ void view_clear(struct View *v) {
     v->buff->lines.len = 0;
 }
 
+struct ReMatch {
+    size_t line;
+    size_t col;
+    size_t len;
+};
+
+void re_state_reset(struct ReState *re_state) {
+    if(re_state->regex) {
+        regfree(re_state->regex);
+        memset(re_state->regex, 0, sizeof(regex_t));
+        vec_clear(&re_state->matches);
+        set_none(&re_state->selected);
+    } else {
+        re_state->regex = xcalloc(1, sizeof(regex_t));
+        re_state->matches = VEC_NEW(struct ReMatch, 0);
+        set_none(&re_state->selected);
+    }
+}
+
+static void re_state_free(struct ReState *re_state) {
+    if(re_state->regex) {
+        regfree(re_state->regex);
+        xfree(re_state->regex);
+        re_state->regex = 0;
+    }
+    vec_cleanup(&re_state->matches);
+}
+
+
 void view_free(struct View *v) {
     buffer_rc_dec(v->buff);
+    re_state_free(&v->re_state);
 }
 
 int view_write(struct View *v, const char *restrict s, size_t len) {
@@ -1640,7 +1669,7 @@ int visual_handle_key(struct KeyEvent *e) {
 
 int search_enter(void) {
     struct View *active_view = tab_active_view(tab_active());
-    RE_STATE.original_cursor = active_view->view_cursor;
+    active_view->re_state.original_cursor = active_view->view_cursor;
 
     message_print("/");
     insert_enter();
@@ -1657,7 +1686,7 @@ int search_handle_key(struct KeyEvent *e) {
     if(e->modifier == 0) {
         if(e->key == '\e') {
             struct View *v = tab_active_view(tab_active());
-            v->view_cursor = RE_STATE.original_cursor;
+            v->view_cursor = v->re_state.original_cursor;
             mode_change(M_Normal);
             return 0;
         } else if(e->key == KC_BACKSPACE) {
@@ -2243,61 +2272,30 @@ void editor_init(void) {
     }
 }
 
-struct ReMatch {
-    size_t line;
-    size_t col;
-    size_t len;
-};
-
-struct ReState RE_STATE = {0};
-
-void re_state_reset(void) {
-    if(RE_STATE.regex) {
-        regfree(RE_STATE.regex);
-        memset(RE_STATE.regex, 0, sizeof(regex_t));
-        vec_clear(&RE_STATE.matches);
-        set_none(&RE_STATE.selected);
-    } else {
-        RE_STATE.regex = xcalloc(1, sizeof(regex_t));
-        RE_STATE.matches = VEC_NEW(struct ReMatch, 0);
-        set_none(&RE_STATE.selected);
-    }
-}
-
-static void re_state_free(void) {
-    if(RE_STATE.regex) {
-        regfree(RE_STATE.regex);
-        xfree(RE_STATE.regex);
-        RE_STATE.regex = 0;
-    }
-    vec_cleanup(&RE_STATE.matches);
-}
-
-
 void cursor_jump_prev_search(void) {
     struct View *active_view = tab_active_view(tab_active());
     // no matches
-    if(!RE_STATE.matches.len) return;
+    if(!active_view->re_state.matches.len) return;
 
     size_t idx;
 
-    match_maybe(&RE_STATE.selected,
+    match_maybe(&active_view->re_state.selected,
             selected, {
                 if(*selected == 0) {
-                    *selected = RE_STATE.matches.len -1;
+                    *selected = active_view->re_state.matches.len -1;
                 }
                 else {
                     *selected -= 1;
                 }
             },
             {
-                set_some(&RE_STATE.selected, 0);
+                set_some(&active_view->re_state.selected, 0);
             }
         );
     // always set
-    idx = *as_ptr(&RE_STATE.selected);
+    idx = *as_ptr(&active_view->re_state.selected);
 
-    struct ReMatch *match = vec_get(&RE_STATE.matches, idx);
+    struct ReMatch *match = vec_get(&active_view->re_state.matches, idx);
 
     active_view->view_cursor.off_x = match->col;
     active_view->view_cursor.off_y = match->line;
@@ -2305,21 +2303,21 @@ void cursor_jump_prev_search(void) {
 
 void cursor_jump_next_search(void) {
     struct View *active_view = tab_active_view(tab_active());
-    if(!RE_STATE.matches.len) return;
+    if(!active_view->re_state.matches.len) return;
     size_t idx;
 
-    match_maybe(&RE_STATE.selected,
+    match_maybe(&active_view->re_state.selected,
             selected, {
-                *selected = (*selected + 1) % RE_STATE.matches.len;
+                *selected = (*selected + 1) % active_view->re_state.matches.len;
             },
             {
-                set_some(&RE_STATE.selected, 0);
+                set_some(&active_view->re_state.selected, 0);
             }
         );
     // always set
-    idx = *as_ptr(&RE_STATE.selected);
+    idx = *as_ptr(&active_view->re_state.selected);
 
-    struct ReMatch *match = vec_get(&RE_STATE.matches, idx);
+    struct ReMatch *match = vec_get(&active_view->re_state.matches, idx);
 
     active_view->view_cursor.off_x = match->col;
     active_view->view_cursor.off_y = match->line;
@@ -2329,13 +2327,13 @@ void editor_find(const char *re_str) {
     struct View *active_view = tab_active_view(tab_active());
 
     int ret;
-    re_state_reset();
+    re_state_reset(&active_view->re_state);
     // Extended regexes break when a partial ( is present
-    ret = regcomp(RE_STATE.regex, re_str, 0);
+    ret = regcomp(active_view->re_state.regex, re_str, 0);
 
     if(ret) {
         char *re_error = xcalloc(128, sizeof(char));
-        regerror(ret, RE_STATE.regex, re_error, 127);
+        regerror(ret, active_view->re_state.regex, re_error, 127);
         message_print("E: %s", re_error);
         free(re_error);
         return;
@@ -2348,12 +2346,12 @@ void editor_find(const char *re_str) {
     Maybe(size_t) selected = None();
 
     for(size_t i = 0; i < active_view->buff->lines.len; i++) {
-        size_t line_idx = (i + RE_STATE.original_cursor.off_y) % active_view->buff->lines.len;
+        size_t line_idx = (i + active_view->re_state.original_cursor.off_y) % active_view->buff->lines.len;
 
         struct Line *l = buffer_line_get(active_view->buff, line_idx);
 
         // TODO(louis) maybe use REG_STARTED
-        ret = regexec(RE_STATE.regex, str_as_cstr(&l->text), matches_size, matches, 0);
+        ret = regexec(active_view->re_state.regex, str_as_cstr(&l->text), matches_size, matches, 0);
         if(ret == REG_NOMATCH) continue;
 
         for(size_t j = 0; j < matches_size; j++) {
@@ -2369,14 +2367,14 @@ void editor_find(const char *re_str) {
             };
 
             if(is_none(&selected)
-                    && match.line >= RE_STATE.original_cursor.off_y
-                    && match.col >= RE_STATE.original_cursor.off_x
-                    && RE_STATE.matches.len > 0) {
+                    && match.line >= active_view->re_state.original_cursor.off_y
+                    && match.col >= active_view->re_state.original_cursor.off_x
+                    && active_view->re_state.matches.len > 0) {
 
-                set_some(&selected, RE_STATE.matches.len);
+                set_some(&selected, active_view->re_state.matches.len);
             }
 
-            vec_push(&RE_STATE.matches, &match);
+            vec_push(&active_view->re_state.matches, &match);
         }
     }
     free(matches);
@@ -2385,5 +2383,4 @@ void editor_find(const char *re_str) {
 void editor_teardown(void) {
     vec_cleanup(&TABS);
     view_free(&MESSAGE);
-    re_state_free();
 }

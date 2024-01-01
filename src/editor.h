@@ -182,8 +182,6 @@ struct ReState {
     Maybe(size_t) selected;
 };
 
-extern struct ReState RE_STATE;
-
 struct ViewOpt {
     int no_line_num;
 };
@@ -217,6 +215,7 @@ struct View {
     ViewPort vp;
     Maybe(ViewCursor) selection_end;
     struct RenderPlan rp;
+    struct ReState re_state;
 };
 
 // does not clone `buff`
