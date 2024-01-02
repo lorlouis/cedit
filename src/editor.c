@@ -673,6 +673,10 @@ static struct RenderPlan view_plan_render(
         ViewPort *vp,
         const struct winsize *ws) {
 
+    // reset the cursor, the current cursor might be out of range
+    // if another view is editing the same buffer
+    view_set_cursor(v, v->view_cursor.off_x, v->view_cursor.off_y);
+
     ViewPort *real_vp = vp;
 
     if(v->viewport_locked) {
