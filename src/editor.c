@@ -274,6 +274,19 @@ int buffer_line_insert(struct Buffer *buff, size_t idx, struct Line line) {
     return vec_insert(&buff->lines, idx, &line);
 }
 
+// DO NOT CALL DIRECTLY, call `re_state_rc_dec`
+static void re_state_free(struct ReState *re_state) {
+    if(re_state) {
+        if(re_state->regex) {
+            regfree(re_state->regex);
+            xfree(re_state->regex);
+            re_state->regex = 0;
+        }
+        vec_cleanup(&re_state->matches);
+    }
+}
+
+
 // DO NOT USE DIRECTLY, USE `buffer_rc_dec`
 void buffer_cleanup(struct Buffer *buff) {
     vec_cleanup(&buff->lines);
@@ -284,6 +297,7 @@ void buffer_cleanup(struct Buffer *buff) {
             str_free(&buff->in.u.file.path);
             break;
     }
+    re_state_free(&buff->re_state);
     memset(buff, 0, sizeof(struct Buffer));
 }
 
@@ -407,19 +421,8 @@ void re_state_reset(struct ReState *re_state) {
     }
 }
 
-static void re_state_free(struct ReState *re_state) {
-    if(re_state->regex) {
-        regfree(re_state->regex);
-        xfree(re_state->regex);
-        re_state->regex = 0;
-    }
-    vec_cleanup(&re_state->matches);
-}
-
-
 void view_free(struct View *v) {
     buffer_rc_dec(v->buff);
-    re_state_free(&v->re_state);
 }
 
 int view_write(struct View *v, const char *restrict s, size_t len) {
@@ -472,8 +475,8 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
     }
 
     // rerun the search
-    if(v->re_state.matches.len) {
-        re_state_clear_matches(&v->re_state);
+    if(v->buff->re_state.matches.len) {
+        re_state_clear_matches(&v->buff->re_state);
         view_search_re(v);
     }
 
@@ -486,6 +489,16 @@ void view_set_cursor(struct View *v, size_t x, size_t y) {
     struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
 
     v->view_cursor.off_x = x < str_len(&l->text) ? x : str_len(&l->text);
+}
+
+utf32 view_get_cursor_char(const struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+    if(v->view_cursor.off_x == str_len(&l->text)) {
+        return L'\n';
+    }
+    utf32 c = 0;
+    str_get_char(&l->text, v->view_cursor.off_x, &c);
+    return c;
 }
 
 struct ViewCursor view_get_cursor(const struct View *v) {
@@ -1337,7 +1350,7 @@ struct View view_new(struct Buffer *buff) {
 
 struct View view_clone(struct View *v) {
     struct View view = *v;
-    buffer_rc_inc(view.buff);
+    buffer_rc_inc(v->buff);
     return view;
 }
 
@@ -1377,8 +1390,8 @@ int view_erase(struct View *v) {
     }
 
     // rerun the search
-    if(v->re_state.matches.len) {
-        re_state_clear_matches(&v->re_state);
+    if(v->buff->re_state.matches.len) {
+        re_state_clear_matches(&v->buff->re_state);
         view_search_re(v);
     }
 
@@ -1711,7 +1724,7 @@ int visual_handle_key(struct KeyEvent *e) {
 
 int search_enter(void) {
     struct View *active_view = tab_active_view(tab_active());
-    active_view->re_state.original_cursor = active_view->view_cursor;
+    active_view->buff->re_state.original_cursor = active_view->view_cursor;
 
     message_print("/");
     insert_enter();
@@ -1730,8 +1743,8 @@ int search_handle_key(struct KeyEvent *e) {
             struct View *v = tab_active_view(tab_active());
             view_set_cursor(
                     v,
-                    v->re_state.original_cursor.off_x,
-                    v->re_state.original_cursor.off_y);
+                    v->buff->re_state.original_cursor.off_x,
+                    v->buff->re_state.original_cursor.off_y);
             mode_change(M_Normal);
             return 0;
         } else if(e->key == KC_DEL) {
@@ -2326,27 +2339,27 @@ void editor_init(void) {
 void cursor_jump_prev_search(void) {
     struct View *active_view = tab_active_view(tab_active());
     // no matches
-    if(!active_view->re_state.matches.len) return;
+    if(!active_view->buff->re_state.matches.len) return;
 
     size_t idx;
 
-    match_maybe(&active_view->re_state.selected,
+    match_maybe(&active_view->buff->re_state.selected,
             selected, {
                 if(*selected == 0) {
-                    *selected = active_view->re_state.matches.len -1;
+                    *selected = active_view->buff->re_state.matches.len -1;
                 }
                 else {
                     *selected -= 1;
                 }
             },
             {
-                set_some(&active_view->re_state.selected, 0);
+                set_some(&active_view->buff->re_state.selected, 0);
             }
         );
     // always set
-    idx = *as_ptr(&active_view->re_state.selected);
+    idx = *as_ptr(&active_view->buff->re_state.selected);
 
-    struct ReMatch *match = vec_get(&active_view->re_state.matches, idx);
+    struct ReMatch *match = vec_get(&active_view->buff->re_state.matches, idx);
 
     active_view->view_cursor.off_x = match->col;
     active_view->view_cursor.off_y = match->line;
@@ -2354,22 +2367,22 @@ void cursor_jump_prev_search(void) {
 
 void cursor_jump_next_search(void) {
     struct View *active_view = tab_active_view(tab_active());
-    if(!active_view->re_state.matches.len) return;
+    if(!active_view->buff->re_state.matches.len) return;
 
     size_t idx;
 
-    match_maybe(&active_view->re_state.selected,
+    match_maybe(&active_view->buff->re_state.selected,
             selected, {
-                *selected = (*selected + 1) % active_view->re_state.matches.len;
+                *selected = (*selected + 1) % active_view->buff->re_state.matches.len;
             },
             {
-                set_some(&active_view->re_state.selected, 0);
+                set_some(&active_view->buff->re_state.selected, 0);
             }
         );
     // always set
-    idx = *as_ptr(&active_view->re_state.selected);
+    idx = *as_ptr(&active_view->buff->re_state.selected);
 
-    struct ReMatch *match = vec_get(&active_view->re_state.matches, idx);
+    struct ReMatch *match = vec_get(&active_view->buff->re_state.matches, idx);
 
     view_set_cursor(active_view, match->col, match->line);
 }
@@ -2382,12 +2395,12 @@ static void view_search_re(struct View *v) {
     Maybe(size_t) selected = None();
 
     for(size_t i = 0; i < v->buff->lines.len; i++) {
-        size_t line_idx = (i + v->re_state.original_cursor.off_y) % v->buff->lines.len;
+        size_t line_idx = (i + v->buff->re_state.original_cursor.off_y) % v->buff->lines.len;
 
         struct Line *l = buffer_line_get(v->buff, line_idx);
 
         // TODO(louis) maybe use REG_STARTED
-        ret = regexec(v->re_state.regex, str_as_cstr(&l->text), matches_size, matches, 0);
+        ret = regexec(v->buff->re_state.regex, str_as_cstr(&l->text), matches_size, matches, 0);
         if(ret == REG_NOMATCH) continue;
 
         for(size_t j = 0; j < matches_size; j++) {
@@ -2403,14 +2416,14 @@ static void view_search_re(struct View *v) {
             };
 
             if(is_none(&selected)
-                    && match.line >= v->re_state.original_cursor.off_y
-                    && match.col >= v->re_state.original_cursor.off_x
-                    && v->re_state.matches.len > 0) {
+                    && match.line >= v->buff->re_state.original_cursor.off_y
+                    && match.col >= v->buff->re_state.original_cursor.off_x
+                    && v->buff->re_state.matches.len > 0) {
 
-                set_some(&selected, v->re_state.matches.len);
+                set_some(&selected, v->buff->re_state.matches.len);
             }
 
-            vec_push(&v->re_state.matches, &match);
+            vec_push(&v->buff->re_state.matches, &match);
         }
     }
     free(matches);
@@ -2418,15 +2431,15 @@ static void view_search_re(struct View *v) {
 
 void editor_search(const char *re_str) {
     struct View *active_view = tab_active_view(tab_active());
-
     int ret;
-    re_state_reset(&active_view->re_state);
+
+    re_state_reset(&active_view->buff->re_state);
     // Extended regexes break when a partial ( is present
-    ret = regcomp(active_view->re_state.regex, re_str, 0);
+    ret = regcomp(active_view->buff->re_state.regex, re_str, 0);
 
     if(ret) {
         char *re_error = xcalloc(128, sizeof(char));
-        regerror(ret, active_view->re_state.regex, re_error, 127);
+        regerror(ret, active_view->buff->re_state.regex, re_error, 127);
         message_print("E: %s", re_error);
         free(re_error);
         return;

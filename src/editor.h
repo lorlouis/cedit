@@ -16,88 +16,6 @@
     #include <termio.h>
 #endif
 
-struct AbsoluteCursor;
-
-extern struct winsize WS;
-
-extern int RUNNING;
-
-extern struct View MESSAGE;
-
-enum FileMode {
-    FM_RW,
-    FM_RO,
-};
-
-struct Input {
-    enum {
-        INPUT_SCRATCH,
-        INPUT_FILE,
-    } ty;
-    union {
-        int scratch:1;
-        struct {
-            Str path;
-            enum FileMode fm;
-        } file;
-    } u;
-};
-
-enum Mode {
-    M_Normal = 0,
-    M_Insert = 1,
-    M_Window = 2,
-    M_Command = 3,
-    M_Visual = 4,
-    M_Search = 5,
-};
-
-struct ModeInterface {
-    const char* mode_str;
-    int (*handle_key)(struct KeyEvent *e);
-    int (*on_enter)(void);
-    int (*on_leave)(void);
-};
-
-struct ModeInterface mode_current(void);
-
-int mode_change(enum Mode mode);
-
-typedef void (cleanup_fn)(void *data);
-
-struct Line {
-    Str text;
-    size_t render_width;
-    // `Vec` of `uint8_t`
-    Vec style_ids;
-};
-
-// Null initialise {0} to get a scratch buffer
-struct Buffer {
-    struct Input in;
-    enum FileMode fm;
-    // vec of lines
-    Vec lines;
-    int dirty;
-    size_t rc;
-};
-
-struct Line *buffer_line_get(struct Buffer *buff, size_t idx);
-
-int buffer_line_insert(struct Buffer *buff, size_t idx, struct Line line);
-
-// increases the count and returns the data
-// Returns
-//  0 if the content does not exist
-// >0 if the content exists
-struct Buffer* buffer_rc_inc(struct Buffer *buff);
-
-// decreases the count and frees if the count is 0
-// Returns:
-//  1 when the content of Rc got freed
-//  0 when the content still exists
-int buffer_rc_dec(struct Buffer *buff);
-
 enum MaybeVariant {
     None,
     Some,
@@ -161,20 +79,69 @@ enum ResultVariant {
         }; break; \
     }
 
-// View Port is computed in absolute screen coordinates
-typedef struct {
-    uint16_t width;
-    uint16_t height;
 
-    uint16_t off_x;
-    uint16_t off_y;
-} ViewPort;
+struct AbsoluteCursor;
+
+extern struct winsize WS;
+
+extern int RUNNING;
+
+extern struct View MESSAGE;
+
+enum FileMode {
+    FM_RW,
+    FM_RO,
+};
+
+struct Input {
+    enum {
+        INPUT_SCRATCH,
+        INPUT_FILE,
+    } ty;
+    union {
+        int scratch:1;
+        struct {
+            Str path;
+            enum FileMode fm;
+        } file;
+    } u;
+};
+
+enum Mode {
+    M_Normal = 0,
+    M_Insert = 1,
+    M_Window = 2,
+    M_Command = 3,
+    M_Visual = 4,
+    M_Search = 5,
+};
+
+struct ModeInterface {
+    const char* mode_str;
+    int (*handle_key)(struct KeyEvent *e);
+    int (*on_enter)(void);
+    int (*on_leave)(void);
+};
+
+struct ModeInterface mode_current(void);
+
+int mode_change(enum Mode mode);
+
+typedef void (cleanup_fn)(void *data);
+
+struct Line {
+    Str text;
+    size_t render_width;
+    // `Vec` of `uint8_t`
+    Vec style_ids;
+};
 
 typedef struct ViewCursor {
     size_t off_x;
     size_t off_y;
     size_t target_x;
 } ViewCursor;
+
 
 struct ReState {
     struct ViewCursor original_cursor;
@@ -187,6 +154,43 @@ struct ReState {
 void re_state_clear_matches(struct ReState *re_state);
 
 void re_state_reset(struct ReState *re_state);
+
+
+// Null initialise {0} to get a scratch buffer
+struct Buffer {
+    struct Input in;
+    enum FileMode fm;
+    // vec of lines
+    Vec lines;
+    int dirty;
+    struct ReState re_state;
+    size_t rc;
+};
+
+struct Line *buffer_line_get(struct Buffer *buff, size_t idx);
+
+int buffer_line_insert(struct Buffer *buff, size_t idx, struct Line line);
+
+// increases the count and returns the data
+// Returns
+//  0 if the content does not exist
+// >0 if the content exists
+struct Buffer* buffer_rc_inc(struct Buffer *buff);
+
+// decreases the count and frees if the count is 0
+// Returns:
+//  1 when the content of Rc got freed
+//  0 when the content still exists
+int buffer_rc_dec(struct Buffer *buff);
+
+// View Port is computed in absolute screen coordinates
+typedef struct {
+    uint16_t width;
+    uint16_t height;
+
+    uint16_t off_x;
+    uint16_t off_y;
+} ViewPort;
 
 struct ViewOpt {
     int no_line_num;
@@ -221,7 +225,6 @@ struct View {
     ViewPort vp;
     Maybe(ViewCursor) selection_end;
     struct RenderPlan rp;
-    struct ReState re_state;
 };
 
 enum Direction {
