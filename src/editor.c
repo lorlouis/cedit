@@ -149,7 +149,8 @@ FILE* filemode_open(
             FILE *f = fopen(path, "r+");
             // it's possible that the file does not exist
             if(!f && errno == ENOENT) {
-                return fopen(path, "w+");
+                errno = 0;
+                return 0;
             }
             return f;
         } break;
@@ -204,31 +205,35 @@ int buffer_init_from_path(
 
     errno = 0;
     FILE *f = filemode_open(fm, path);
-    if(!f) return -1;
+    // there was an error
+    if(!f && errno) return -1;
 
     *buff = buffer_new();
 
-    char *line=0;
-    size_t cap=0;
-    ssize_t len=0;
-    errno = 0;
-    while((len=getline(&line, &cap, f)) > 0) {
+    // the file exists
+    if(f) {
+        char *line=0;
+        size_t cap=0;
+        ssize_t len=0;
+        errno = 0;
+        while((len=getline(&line, &cap, f)) > 0) {
 
-        if(line[len-1] == '\n') {
-            line[len-1] = '\0';
-            len-=1;
+            if(line[len-1] == '\n') {
+                line[len-1] = '\0';
+                len-=1;
+            }
+
+            struct Line l = line_from_cstr(line);
+            vec_push(&buff->lines, &l);
         }
+        free(line);
 
-        struct Line l = line_from_cstr(line);
-        vec_push(&buff->lines, &l);
+        if(len == -1 && ferror(f)) {
+            errno = ferror(f);
+            goto err;
+        }
+        fclose(f);
     }
-    free(line);
-
-    if(len == -1 && ferror(f)) {
-        errno = ferror(f);
-        goto err;
-    }
-    fclose(f);
 
     buff->in.ty = INPUT_FILE;
     buff->in.u.file.fm = fm;
