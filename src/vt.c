@@ -226,13 +226,6 @@ size_t count_cols(const Str *line, int tab_width) {
         }
 
         width = utf32_width(c);
-        // -1 on non printable characters
-        if(width <= 0) {
-            off += 1;
-            if(c == L'\t') sum += tab_width;
-            width = 0;
-            continue;
-        }
 
         sum += width;
         off += 1;

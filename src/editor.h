@@ -68,7 +68,8 @@ typedef void (cleanup_fn)(void *data);
 struct Line {
     Str text;
     size_t render_width;
-    Vec syles;
+    // `Vec` of `uint8_t`
+    Vec style_ids;
 };
 
 // Null initialise {0} to get a scratch buffer
@@ -172,6 +173,7 @@ typedef struct {
 typedef struct ViewCursor {
     size_t off_x;
     size_t off_y;
+    size_t target_x;
 } ViewCursor;
 
 struct ReState {
@@ -181,6 +183,10 @@ struct ReState {
     Vec matches;
     Maybe(size_t) selected;
 };
+
+void re_state_clear_matches(struct ReState *re_state);
+
+void re_state_reset(struct ReState *re_state);
 
 struct ViewOpt {
     int no_line_num;
@@ -217,13 +223,6 @@ struct View {
     struct RenderPlan rp;
     struct ReState re_state;
 };
-
-// does not clone `buff`
-struct View view_new(struct Buffer *buff);
-
-void view_clear(struct View *v);
-
-struct View view_clone(struct View *v);
 
 enum Direction {
     DIR_Up = 1,
@@ -297,6 +296,13 @@ void buffer_cleanup(struct Buffer *buff);
 uint16_t viewport_viewable_width(const ViewPort *vp, const struct winsize *ws);
 uint16_t viewport_viewable_height(const ViewPort *vp, const struct winsize *ws);
 
+// does not clone `buff`
+struct View view_new(struct Buffer *buff);
+
+void view_clear(struct View *v);
+
+struct View view_clone(struct View *v);
+
 int view_render(
         struct View *v,
         ViewPort *vp,
@@ -306,6 +312,8 @@ int view_render(
 void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y);
 
 int view_write(struct View *v, const char *restrict s, size_t len);
+
+static void view_search_re(struct View *v);
 
 int tabs_prev(void);
 
@@ -354,5 +362,6 @@ void cursor_jump_prev_search(void);
 void cursor_jump_next_search(void);
 
 void editor_search(const char *re_str);
+
 
 #endif
