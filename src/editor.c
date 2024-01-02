@@ -1174,6 +1174,13 @@ struct View* tab_active_view(struct Tab *tab) {
     return window_view_active(w);
 }
 
+int tabs_last(void) {
+    if(TABS.len) {
+        ACTIVE_TAB = TABS.len-1;
+    }
+    return ACTIVE_TAB;
+}
+
 int tabs_prev(void) {
     if(ACTIVE_TAB > 0) {
         ACTIVE_TAB -= 1;
@@ -1510,7 +1517,7 @@ int insert_handle_key(struct KeyEvent *e) {
         for(int i = 0; i < CONFIG.tab_width; i++) {
             view_write(v, " ", 1);
         }
-    } else if(e->key == KC_BACKSPACE) {
+    } else if(e->key == KC_DEL) {
         view_erase(v);
         return 0;
     } else {
@@ -1581,7 +1588,7 @@ int command_handle_key(struct KeyEvent *e) {
         if(e->key == '\e') {
             mode_change(M_Normal);
             return 0;
-        } else if(e->key == KC_BACKSPACE) {
+        } else if(e->key == KC_DEL) {
             // do not erase the leading ':'
             if(MESSAGE.view_cursor.off_x > 1) {
                 view_erase(&MESSAGE);
@@ -1690,7 +1697,7 @@ int search_handle_key(struct KeyEvent *e) {
             v->view_cursor = v->re_state.original_cursor;
             mode_change(M_Normal);
             return 0;
-        } else if(e->key == KC_BACKSPACE) {
+        } else if(e->key == KC_DEL) {
             // do not erase the leading ':'
             if(MESSAGE.view_cursor.off_x > 1) {
                 view_erase(&MESSAGE);
@@ -1709,7 +1716,7 @@ int search_handle_key(struct KeyEvent *e) {
             message_append("%.*s", len, bytes);
             struct Line *line = buffer_line_get(MESSAGE.buff, 0);
             // this only checks the first line
-            editor_find(str_as_cstr(&line->text)+1);
+            editor_search(str_as_cstr(&line->text)+1);
             cursor_jump_next_search();
         } break;
     }
@@ -2000,8 +2007,8 @@ void editor_tabnew(const char *path, enum FileMode fm) {
     struct Window win = window_new();
     window_view_push(&win, new_view);
     tabs_push(tab_new(win, path));
-    // switch to new tab
-    tabs_next();
+    // switch to last tab
+    tabs_last();
 }
 
 void editor_split_open(const char *path, enum FileMode fm, enum SplitDir split) {
@@ -2051,7 +2058,7 @@ void editor_open(const char *path, enum FileMode fm, int no_confirm) {
                 return;
             case INPUT_FILE:
                 path = str_as_cstr(&active_view->buff->in.u.file.path);
-                break;
+            break;
         }
     }
 
@@ -2059,6 +2066,12 @@ void editor_open(const char *path, enum FileMode fm, int no_confirm) {
 
     if(view_from_path(path, fm, &new_view)) {
         return;
+    }
+
+    if(active_tab->active_window == 0 && strcmp(str_as_cstr(&active_tab->name), path)) {
+        size_t path_len = strlen(path);
+        str_clear(&active_tab->name);
+        str_push(&active_tab->name, path, path_len);
     }
 
     view_free(active_view);
@@ -2324,7 +2337,7 @@ void cursor_jump_next_search(void) {
     active_view->view_cursor.off_y = match->line;
 }
 
-void editor_find(const char *re_str) {
+void editor_search(const char *re_str) {
     struct View *active_view = tab_active_view(tab_active());
 
     int ret;

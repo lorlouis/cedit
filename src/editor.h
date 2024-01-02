@@ -353,6 +353,6 @@ void cursor_jump_prev_search(void);
 
 void cursor_jump_next_search(void);
 
-void editor_find(const char *re_str);
+void editor_search(const char *re_str);
 
 #endif

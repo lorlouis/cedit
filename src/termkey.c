@@ -129,7 +129,7 @@ int readkey(int fd, struct KeyEvent *restrict e) {
             case 127:
                 // could also be <C-?>
                 // could also be <C-8>
-                e->key = KC_BACKSPACE;
+                e->key = KC_DEL;
                 e->modifier = 0;
                 break;
             default:
@@ -419,8 +419,6 @@ int keyevent_fmt(struct KeyEvent *e, char *buff, size_t len) {
             }
             off += 2;
             break;
-        case KC_BACKSPACE:
-            CHECKED_CPY("BSP");
         case KC_DEL:
             CHECKED_CPY("Del");
         case KC_HOME:

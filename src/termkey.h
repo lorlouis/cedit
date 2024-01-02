@@ -5,7 +5,6 @@
 #include "utf.h"
 
 enum KeyCode {
-    KC_BACKSPACE = 8,
     KC_DEL = 127,
     KC_HOME = 256,
     KC_INS,
