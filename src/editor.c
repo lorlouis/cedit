@@ -1434,6 +1434,16 @@ int normal_handle_key(struct KeyEvent *e) {
             case 'G': {
                 view_move_cursor(v, 0, v->buff->lines.len);
             } break;
+            case '^': {
+                view_move_cursor_start(v);
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                for(size_t i = 0; i < str_len(&l->text); i++) {
+                    utf32 c = view_get_cursor_char(v);
+                    wint_t wc = utf32_to_wint(c);
+                    if(!iswspace(wc)) break;
+                    view_move_cursor(v, +1, 0);
+                }
+            } break;
             case 'O': {
                 view_move_cursor_start(v);
                 view_write(v, "\n", sizeof("\n")-1);
