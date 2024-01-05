@@ -180,7 +180,7 @@ int buffer_dump(
 
     for(size_t i = 0; i < buff->lines.len; i++) {
         struct Line *line = buffer_line_get(buff, i);
-        int ret = fprintf(f, "%s\n", str_as_cstr(&line->text));
+        int ret = fprintf(f, "%.*s\n", (int)str_cstr_len(&line->text), str_as_cstr(&line->text));
         if(ret < 0) {
             errno = ferror(f);
             fclose(f);
@@ -285,6 +285,10 @@ static void re_state_free(struct ReState *re_state) {
             re_state->regex = 0;
         }
         vec_cleanup(&re_state->matches);
+        if(re_state->error_str) {
+            xfree(re_state->error_str);
+            re_state->error_str = 0;
+        }
     }
 }
 
@@ -420,6 +424,10 @@ void re_state_reset(struct ReState *re_state) {
         re_state->regex = xcalloc(1, sizeof(regex_t));
         re_state->matches = VEC_NEW(struct ReMatch, 0);
         re_state_clear_matches(re_state);
+    }
+    if(re_state->error_str) {
+        xfree(re_state->error_str);
+        re_state->error_str = 0;
     }
 }
 
@@ -1796,6 +1804,12 @@ int search_enter(void) {
 }
 
 int search_leave(void) {
+    struct View *active_view = tab_active_view(tab_active());
+    if(active_view->buff->re_state.error_str) {
+        message_print(
+            "E: regex error: '%s'",
+            active_view->buff->re_state.error_str);
+    }
     insert_leave();
     return 0;
 }
@@ -2502,12 +2516,15 @@ void editor_search(const char *re_str) {
     ret = regcomp(active_view->buff->re_state.regex, re_str, 0);
 
     if(ret) {
-        char *re_error = xcalloc(128, sizeof(char));
-        regerror(ret, active_view->buff->re_state.regex, re_error, 127);
-        message_print("E: %s", re_error);
-        free(re_error);
+        active_view->buff->re_state.error_str = xcalloc(128, sizeof(char));
+        regerror(
+            ret,
+            active_view->buff->re_state.regex,
+            active_view->buff->re_state.error_str,
+            127);
         return;
     }
+
     view_search_re(active_view);
 }
 

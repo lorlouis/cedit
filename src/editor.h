@@ -149,6 +149,7 @@ struct ReState {
     // `Vec` of `ReMatch`
     Vec matches;
     Maybe(size_t) selected;
+    char *error_str;
 };
 
 void re_state_clear_matches(struct ReState *re_state);
