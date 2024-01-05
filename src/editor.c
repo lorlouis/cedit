@@ -1763,10 +1763,6 @@ int visual_handle_key(struct KeyEvent *e) {
                 view_move_cursor(v, +1,0);
             } break;
             case 'd': {
-                struct ViewSelection vs = view_selection_from_cursors(
-                    *as_ptr(&v->selection_end),
-                    v->view_cursor
-                );
                 view_erase(v);
                 mode_change(M_Normal);
             } break;

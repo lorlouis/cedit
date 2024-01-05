@@ -315,6 +315,8 @@ int view_render(
 
 void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y);
 
+void view_set_cursor(struct View *v, size_t x, size_t y);
+
 int view_write(struct View *v, const char *restrict s, size_t len);
 
 static void view_search_re(struct View *v);
@@ -327,9 +329,13 @@ int tabs_push(struct Tab tab);
 
 int tabs_pop(void);
 
+struct Tab* tab_active(void);
+
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
 
 struct Window* tab_active_window(struct Tab *tab);
+
+struct View* tab_active_view(struct Tab *tab);
 
 // editor api
 
