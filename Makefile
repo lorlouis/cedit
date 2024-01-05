@@ -19,9 +19,12 @@ TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(TEST_SOURCE))
 
 all: compile test
 
-.PHONY: compile_commands.json
 compile_commands.json:
 	bear -- make
+
+.PHONY: doc
+doc: compile_commands.json
+	clang-doc --executor=all-TUs --format=html compile_commands.json --project-name $(OUT) --doxygen
 
 compile: $(ENTRYPOINT_OBJ) $(OBJS)
 	$(CC) -o $(OUT) $^ $(LFLAGS)
@@ -39,6 +42,8 @@ $(BUILD_DIR)/$(TEST_DIR)_%.o: $(TEST_DIR)/%.c $(BUILD_DIR)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
 	$(CC) $(FLAGS) -c -o $@ $<
 
+.PHONY: clean
 clean:
-	rm -f $(OBJS) $(OUT) $(ENTRYPOINT_OBJ) $(TEST_OBJS) test_$(OUT)
+	rm -f $(OBJS) $(OUT) $(ENTRYPOINT_OBJ) $(TEST_OBJS) test_$(OUT) compile_commands.json
+	rm -rf docs
 	rmdir $(BUILD_DIR) 2>/dev/null || true

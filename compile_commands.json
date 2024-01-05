@@ -114,18 +114,49 @@
   {
     "arguments": [
       "/usr/bin/cc",
-      "-Isrc",
       "--std=gnu17",
       "-g",
       "-Wall",
       "-Wextra",
       "-c",
       "-o",
-      "build/tests_test.o",
-      "tests/test.c"
+      "build/commands.o",
+      "src/commands.c"
     ],
     "directory": "/home/lor_louis/Documents/Projects/C/cedit",
-    "file": "/home/lor_louis/Documents/Projects/C/cedit/tests/test.c",
-    "output": "/home/lor_louis/Documents/Projects/C/cedit/build/tests_test.o"
+    "file": "/home/lor_louis/Documents/Projects/C/cedit/src/commands.c",
+    "output": "/home/lor_louis/Documents/Projects/C/cedit/build/commands.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/config.o",
+      "src/config.c"
+    ],
+    "directory": "/home/lor_louis/Documents/Projects/C/cedit",
+    "file": "/home/lor_louis/Documents/Projects/C/cedit/src/config.c",
+    "output": "/home/lor_louis/Documents/Projects/C/cedit/build/config.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "--std=gnu17",
+      "-g",
+      "-Wall",
+      "-Wextra",
+      "-c",
+      "-o",
+      "build/highlight.o",
+      "src/highlight.c"
+    ],
+    "directory": "/home/lor_louis/Documents/Projects/C/cedit",
+    "file": "/home/lor_louis/Documents/Projects/C/cedit/src/highlight.c",
+    "output": "/home/lor_louis/Documents/Projects/C/cedit/build/highlight.o"
   }
 ]

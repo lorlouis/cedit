@@ -38,7 +38,7 @@ struct View MESSAGE = {
     }
 };
 
-// len in character idx
+/// len in character idx
 size_t render_width(Str *s, size_t len) {
     size_t width = 0;
     for(size_t i = 0; i < len; i++) {
@@ -58,7 +58,9 @@ struct Line line_from_cstr(char *s) {
 }
 
 struct Line line_new(void) {
-    return (struct Line){0};
+    struct Line l = {0};
+    l.text = str_new();
+    return l;
 }
 
 void line_free(struct Line *l) {
@@ -1361,37 +1363,72 @@ struct View view_clone(struct View *v) {
 int view_erase(struct View *v) {
     size_t cursor = v->view_cursor.off_x;
 
-    struct Line *line = buffer_line_get(v->buff, v->view_cursor.off_y);
-    if(cursor > 0) {
-        v->buff->dirty = 1;
-        size_t start = cursor-1;
-        if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
-            _Bool is_a_tab = true;
-            utf32 c = 0;
-            for(int i = 1; i <= CONFIG.tab_width; i++) {
-                str_get_char(&line->text, cursor - i, &c);
-                if(c != L' ') {
-                    is_a_tab = false;
-                    break;
-                }
+    match_maybe(&v->selection_end,
+        selection_end, {
+            struct ViewSelection vs = view_selection_from_cursors(v->view_cursor, *selection_end);
+
+            struct Line *last_line = buffer_line_get(v->buff, vs.end.off_y);
+            Str last_line_tail = str_new();
+            // tries to get the end of the line, if end+1 is included ie: newline
+            // copy line end.off_y +1 instead, and then delete it
+            if(vs.end.off_x < str_len(&last_line->text)) {
+                last_line_tail = str_tail(&last_line->text, vs.end.off_x+1);
+
+                // clone the line, this might be needed if the
+                // first line and the last line are the same line
+                last_line_tail = str_clone(&last_line_tail);
+            } else if(vs.end.off_y+1 < v->buff->lines.len) {
+                struct Line *past_last_line = buffer_line_get(v->buff, vs.end.off_y+1);
+                last_line_tail = str_clone(&past_last_line->text);
+                buffer_line_remove(v->buff, vs.end.off_y+1);
             }
-            if(is_a_tab) {
-                start = cursor - CONFIG.tab_width;
+
+            struct Line *first_line = buffer_line_get(v->buff, vs.start.off_y);
+            // trunk first line
+            line_trunk(first_line, vs.start.off_x);
+            // append the end of the last line
+            line_append(first_line, str_as_cstr(&last_line_tail), str_cstr_len(&last_line_tail));
+            str_free(&last_line_tail);
+
+            size_t selected_lines_count = vs.end.off_y - vs.start.off_y + 1;
+            for(size_t i = 1; i < selected_lines_count; i++) {
+                buffer_line_remove(v->buff, vs.start.off_y + 1);
+            }
+        },
+        {
+            struct Line *line = buffer_line_get(v->buff, v->view_cursor.off_y);
+            if(cursor > 0) {
+                v->buff->dirty = 1;
+                size_t start = cursor-1;
+                if(CONFIG.use_spaces && cursor >= 4 && !(cursor%4)) {
+                    _Bool is_a_tab = true;
+                    utf32 c = 0;
+                    for(int i = 1; i <= CONFIG.tab_width; i++) {
+                        str_get_char(&line->text, cursor - i, &c);
+                        if(c != L' ') {
+                            is_a_tab = false;
+                            break;
+                        }
+                    }
+                    if(is_a_tab) {
+                        start = cursor - CONFIG.tab_width;
+                    }
+                }
+
+                line_remove(line, start, cursor-1);
+                v->view_cursor.off_x -= cursor - start;
+            } else if(v->view_cursor.off_y > 0) {
+                v->buff->dirty = 1;
+                struct Line *prev_line = buffer_line_get(v->buff, v->view_cursor.off_y -1);
+                // move cursor to end of previous line
+                v->view_cursor.off_x = str_len(&prev_line->text);
+                line_append(prev_line, str_as_cstr(&line->text), str_cstr_len(&line->text));
+
+                buffer_line_remove(v->buff, v->view_cursor.off_y);
+                v->view_cursor.off_y -= 1;
             }
         }
-
-        line_remove(line, start, cursor-1);
-        v->view_cursor.off_x -= cursor - start;
-    } else if(v->view_cursor.off_y > 0) {
-        v->buff->dirty = 1;
-        struct Line *prev_line = buffer_line_get(v->buff, v->view_cursor.off_y -1);
-        // move cursor to end of previous line
-        v->view_cursor.off_x = str_len(&prev_line->text);
-        line_append(prev_line, str_as_cstr(&line->text), str_cstr_len(&line->text));
-
-        buffer_line_remove(v->buff, v->view_cursor.off_y);
-        v->view_cursor.off_y -= 1;
-    }
+    );
 
     // rerun the search
     if(v->buff->re_state.matches.len) {
@@ -1683,7 +1720,13 @@ int visual_enter(void) {
 
 int visual_leave(void) {
     struct View *v = tab_active_view(tab_active());
-    set_none(&v->selection_end);
+    match_maybe(&v->selection_end,
+        selection_end, {
+            view_set_cursor(v, selection_end->off_x, selection_end->off_y);
+            set_none(&v->selection_end);
+        },
+        {}
+    );
     return 0;
 }
 
@@ -1711,6 +1754,14 @@ int visual_handle_key(struct KeyEvent *e) {
             case 'l': {
                 view_move_cursor(v, +1,0);
             } break;
+            case 'd': {
+                struct ViewSelection vs = view_selection_from_cursors(
+                    *as_ptr(&v->selection_end),
+                    v->view_cursor
+                );
+                view_erase(v);
+                mode_change(M_Normal);
+            } break;
             case 'y': {
                 struct ViewSelection vs = view_selection_from_cursors(
                     *as_ptr(&v->selection_end),
@@ -1726,7 +1777,6 @@ int visual_handle_key(struct KeyEvent *e) {
                             },
                             {}
                         );
-                    set_none(&v->selection_end);
                     mode_change(M_Normal);
                 }
                 str_free(&selected);

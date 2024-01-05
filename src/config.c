@@ -12,4 +12,3 @@ const struct config CONFIG = {
 #endif
     .poll_delay = 25000,
 };
-
