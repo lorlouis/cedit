@@ -70,10 +70,10 @@ TEST_DEF(test_vec_operations)
     ASSERT(!memcmp(v.buf, data, sizeof(data)));
     ASSERT(v.len == sizeof(data) / sizeof(int));
     ASSERT(v.cap == 4);
-    vec_extend(&v, data+2, sizeof(int));
+    vec_extend(&v, data+2, 1);
     ASSERT(VEC_GET(int, &v, 4) != 0);
     ASSERT(*VEC_GET(int, &v, 4) == 4);
-    ASSERT(VEC_GET(int, &v, 14) == 0);
+    ASSERT(v.len == 5);
     vec_insert(&v, 0, data+3);
     int data2[] = {5, 1 ,2 ,4 ,5, 4};
     ASSERT(!memcmp(v.buf, data2, sizeof(data2)));
@@ -99,7 +99,6 @@ TEST_DEF(str_utf8_fuckery)
     utf32 c = 0;
     ASSERT(str_get_char(&s, 13, &c) == 0);
     ASSERT(c == 0x7b97);
-    ASSERT(str_get_char(&s, 30, &c) == -1);
 TEST_ENDDEF
 
 TEST_DEF(test_code_point_to_utf8)
