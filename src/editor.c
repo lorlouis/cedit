@@ -834,7 +834,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
         size_t char_offset = 0;
 
         if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
-            if(write_escaped(&highlight, l, char_offset, len+char_offset) == -1) return -1;
+            if(write_escaped(&highlight, l, char_offset, len) == -1) return -1;
         } else if(view_selection_line_tail_partially_selected(&vs, char_offset, count + v->line_off)) {
             for(size_t i = 0;i < (size_t)len; i++) {
                 if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
@@ -845,7 +845,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
             }
         } else {
             // not selected at all;
-            if(write_escaped(&base_style, l, 0, len) == -1) return -1;
+            if(write_escaped(&base_style, l, char_offset, len) == -1) return -1;
         }
         char_offset += len;
 
@@ -874,7 +874,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
             if(len == -1) return -1;
 
             if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
-                if(write_escaped(&highlight, l, char_offset, len+char_offset) == -1) return -1;
+                if(write_escaped(&highlight, l, char_offset, len) == -1) return -1;
             } else if(view_selection_line_tail_partially_selected(&vs, char_offset, count + v->line_off)) {
                 for(size_t i = 0;i < (size_t)len; i++) {
                     if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
@@ -885,7 +885,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
                 }
             } else {
                 // not selected at all;
-                if(write_escaped(&base_style, l, 0, len) == -1) return -1;
+                if(write_escaped(&base_style, l, char_offset, len) == -1) return -1;
             }
             char_offset += len;
             size_t fill = rp->line_max_width - take_width;
