@@ -2265,7 +2265,7 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     Vec args = VEC_NEW(char*, 0);
     // strtok modifies the string
     size_t command_size = strlen(command)+1;
-    char *command_buffer = malloc(command_size);
+    char *command_buffer = xmalloc(command_size);
     memcpy(command_buffer, command, command_size);
 
     char *token = strtok(command_buffer, " ");
@@ -2289,6 +2289,8 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     int stdin_in = pipdes[1];
 
     if(pipe(pipdes)) {
+        close(stdin_out);
+        close(stdin_in);
         return -1;
     }
 
@@ -2296,6 +2298,10 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     int stdout_in = pipdes[1];
 
     if(pipe(pipdes)) {
+        close(stdin_out);
+        close(stdin_in);
+        close(stdout_out);
+        close(stdout_in);
         return -1;
     }
 
@@ -2461,7 +2467,7 @@ void cursor_jump_next_search(void) {
     view_set_cursor(active_view, match->col, match->line);
 }
 
-static void view_search_re(struct View *v) {
+void view_search_re(struct View *v) {
     int ret;
     size_t matches_size = 50;
     regmatch_t *matches = xcalloc(matches_size, sizeof(regmatch_t));

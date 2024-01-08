@@ -319,7 +319,7 @@ void view_set_cursor(struct View *v, size_t x, size_t y);
 
 int view_write(struct View *v, const char *restrict s, size_t len);
 
-static void view_search_re(struct View *v);
+void view_search_re(struct View *v);
 
 int tabs_prev(void);
 

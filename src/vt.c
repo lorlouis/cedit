@@ -163,14 +163,17 @@ int style_fmt(const Style *s, int fd, const char *fmt, ...) {
     va_start(args, fmt);
 
     ret = style_begin(s, fd);
-    if(ret < 0) return ret;
+    if(ret < 0) {
+        va_end(args);
+        return ret;
+    }
     count += ret;
 
     ret = vdprintf(fd, fmt, args);
-    if(ret < 0) return ret;
-    count += ret;
-
     va_end(args);
+    if(ret < 0) return ret;
+
+    count += ret;
 
     ret = style_reset(fd);
     if(ret < 0) return ret;
