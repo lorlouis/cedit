@@ -1471,13 +1471,49 @@ void view_prev(void) {
 // DO NOT USE DIRECTLY, use mode_* functions
 static enum Mode MODE = M_Normal;
 
+int iswordpunct(wint_t c) {
+    return c != L'_' && iswpunct(c);
+}
+int isword(wint_t c) {
+    return !iswordpunct(c) && !iswspace(c);
+}
+
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
+    int direction = 1;
 
     if(e->modifier == 0) {
         switch(e->key) {
             case 'G': {
                 view_move_cursor(v, 0, v->buff->lines.len);
+            } break;
+            case 'b':
+                direction = -1;
+            /* fall through */
+            case 'w': {
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                // line is empty
+                if(!str_len(&l->text)) {
+                    break;
+                }
+
+                int (*f)(wint_t);
+                utf32 c = view_get_cursor_char(v);
+                wint_t wc = utf32_to_wint(c);
+                if(isword(wc)) {
+                    f = isword;
+                } else if(iswordpunct(wc)) {
+                    f = iswordpunct;
+                } else {
+                    f = iswspace;
+                }
+
+                for(size_t i = 0; i < str_len(&l->text); i++) {
+                    c = view_get_cursor_char(v);
+                    wc = utf32_to_wint(c);
+                    if(!f(wc)) break;
+                    view_move_cursor(v, direction, 0);
+                }
             } break;
             case '^': {
                 view_move_cursor_start(v);
