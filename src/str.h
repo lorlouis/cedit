@@ -41,6 +41,8 @@ void vec_remove(Vec *v, size_t idx);
 typedef struct {
     Vec v;
     Vec char_pos;
+    // only used on slices
+    size_t offset;
 } Str;
 
 Str str_new(void);

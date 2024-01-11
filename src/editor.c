@@ -73,7 +73,12 @@ int line_insert_at(struct Line *l, size_t idx, const char *s, size_t len) {
     return ret;
 }
 
-void line_trunk(struct Line *l, size_t idx) {
+void line_clear(struct Line *l) {
+    l->render_width = 0;
+    str_clear(&l->text);
+}
+
+void line_trunc(struct Line *l, size_t idx) {
     Str tail = str_tail(&l->text, idx);
     size_t trunked_width = render_width(&tail, str_len(&tail));
     str_trunc(&l->text, idx);
@@ -84,10 +89,6 @@ int line_remove(struct Line *l, size_t start, size_t end) {
     int ret = str_remove(&l->text, start, end);
     l->render_width = render_width(&l->text, str_len(&l->text));
     return ret;
-}
-
-void line_clear(struct Line *l) {
-    line_trunk(l, 0);
 }
 
 int line_append(struct Line *l, const char *s, size_t len) {
@@ -457,7 +458,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         end_of_line_len = str_cstr_len(&tail);
         end_of_line = xcalloc(end_of_line_len, sizeof(char));
         memcpy(end_of_line, str_as_cstr(&tail), end_of_line_len);
-        line_trunk(l, v->view_cursor.off_x);
+        line_trunc(l, v->view_cursor.off_x);
     }
 
     size_t last_off = 0;
@@ -1393,7 +1394,7 @@ int view_erase(struct View *v) {
 
             struct Line *first_line = buffer_line_get(v->buff, vs.start.off_y);
             // trunk first line
-            line_trunk(first_line, vs.start.off_x);
+            line_trunc(first_line, vs.start.off_x);
             // append the end of the last line
             line_append(first_line, str_as_cstr(&last_line_tail), str_cstr_len(&last_line_tail));
             str_free(&last_line_tail);

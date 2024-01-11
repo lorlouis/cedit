@@ -146,6 +146,7 @@ Str str_new(void) {
     Str s = {0};
     s.v.type_size = sizeof(char);
     s.char_pos.type_size = sizeof(size_t);
+    s.offset = 0;
     return s;
 }
 
@@ -206,7 +207,6 @@ int str_push(Str *s, char const *o, size_t len) {
                 str_as_cstr(s),
                 str_cstr_len(s)
             );
-
         if(ret) {
             return ret;
         }
@@ -220,6 +220,7 @@ void str_clear(Str *s) {
         ((char*)s->v.buf)[0] = '\0';
     }
     s->v.len = 0;
+    s->char_pos.len = 0;
     return;
 }
 
@@ -229,19 +230,24 @@ void str_free(Str *s) {
     vec_cleanup(&s->v);
 }
 
+// Truncates up to new_len
+// Example:
+//  `str_trunc("hello", 3) => "hel"`
 void str_trunc(Str *s, size_t new_len) {
     assert(new_len <= str_len(s) && "index out of range");
     if(new_len == str_len(s)) return;
+    if(new_len == 0) return str_clear(s);
 
     size_t new_last_idx = str_get_char_byte_idx(s, new_len);
-    utf32 c = 0;
-    str_get_char_byte_idx(s, new_last_idx);
-    size_t c_len = utf32_len_utf8(c);
 
-    size_t new_len_idx = new_last_idx + c_len -1;
+    size_t new_len_idx = new_last_idx;
 
     s->v.len = new_len_idx+1;
-    ((char*)s->v.buf)[new_last_idx+1] = '\0';
+    if(s->char_pos.len) {
+        s->char_pos.len = new_len+1;
+    }
+    ((char*)s->v.buf)[new_last_idx] = '\0';
+
     return;
 }
 
@@ -285,8 +291,8 @@ size_t str_cstr_len(const Str *s) {
 
 // Returns the number of UTF-8 code points.
 size_t str_len(const Str *s) {
-    if(s->char_pos.buf) return s->char_pos.len-1;
     if(s->v.len == 0) return 0;
+    if(s->char_pos.len) return s->char_pos.len-1;
     return s->v.len -1;
 }
 
@@ -316,9 +322,10 @@ int str_remove(Str *s, size_t start, size_t end) {
 }
 
 size_t str_get_char_byte_idx(const Str *s, size_t idx) {
-    if(s->char_pos.buf) {
+    if(s->char_pos.len) {
         size_t *new_idx = VEC_GET(size_t, &s->char_pos, idx);
-        if(new_idx) return *new_idx;
+        // substract the offset from the head of the original slice if any
+        if(new_idx) return *new_idx - s->offset;
         return -1;
     } else if (idx < s->v.len) return idx;
     return -1;
@@ -367,6 +374,7 @@ Str str_tail(const Str *s, size_t idx) {
     return (Str) {
         .v = v,
         .char_pos = char_pos,
+        .offset = byte_off + s->offset,
     };
 }
 
