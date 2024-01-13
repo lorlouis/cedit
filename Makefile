@@ -1,6 +1,5 @@
 ENTRYPOINT	= main.c
 SOURCE	= vt.c editor.c termkey.c xalloc.c str.c utf.c commands.c config.c highlight.c
-TEST_SOURCE	= test.c
 HEADER	=
 SRC_DIR = src
 BUILD_DIR = build
@@ -8,14 +7,18 @@ TEST_DIR = tests
 OUT	= a.out
 CC	?= gcc
 EXTRAFLAGS ?=
-FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS)
+FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR)
+TEST_FLAGS = $(FLAGS) -DTESTING=1 -Itests
 LFLAGS	= -lm
+TEST_LFLAGS = $(LFLAGS)
 
 ENTRYPOINT_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(ENTRYPOINT))
 
 OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCE))
 
-TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(TEST_SOURCE))
+TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(SOURCE))
+
+TEST_EXECS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%,$(SOURCE))
 
 all: compile test
 
@@ -29,15 +32,17 @@ doc: compile_commands.json
 compile: $(ENTRYPOINT_OBJ) $(OBJS)
 	$(CC) -o $(OUT) $^ $(LFLAGS)
 
-test: $(TEST_OBJS) $(OBJS)
-	$(CC) -o test_$(OUT) $^ $(LFLAGS)
-	./test_$(OUT)
+tests: $(TEST_EXECS)
+	echo $^ | xargs -n 1 bash -c
 
 $(BUILD_DIR):
 	mkdir $(BUILD_DIR)
 
-$(BUILD_DIR)/$(TEST_DIR)_%.o: $(TEST_DIR)/%.c $(BUILD_DIR)
-	$(CC) -I$(SRC_DIR) $(FLAGS) -c -o $@ $<
+$(BUILD_DIR)/$(TEST_DIR)_%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
+	$(CC) $(TEST_FLAGS) -c -o $@ $<
+
+$(BUILD_DIR)/$(TEST_DIR)_%: $(BUILD_DIR)/$(TEST_DIR)_%.o $(OBJS)
+	$(CC) -o $@ $(filter-out $(patsubst $(BUILD_DIR)/$(TEST_DIR)_%.o,$(BUILD_DIR)/%.o,$<),$^) $(LFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
 	$(CC) $(FLAGS) -c -o $@ $<

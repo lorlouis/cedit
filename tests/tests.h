@@ -11,6 +11,7 @@
 #define TESTS_START \
 _Bool generate_trap = 0; \
 int main(int argc, char **argv) { \
+	printf("\033[0;33mRunning %s's tests\033[0m\n", __FILE__); \
     { \
         int test_c = 0; \
         while((test_c = getopt(argc, argv, "t")) != -1) { \
@@ -52,8 +53,8 @@ int main(int argc, char **argv) { \
     }
 
 #define TESTS_END \
-    printf("\n\tRan %d tests\t%d Failed\n", test_count, failed_tests_count); \
-    return failed_tests_count != 0; \
+    printf("\tRan %d tests\t%d Failed\n", test_count, failed_tests_count); \
+    return failed_tests_count != 0 && status == 0; \
 }
 
 #endif

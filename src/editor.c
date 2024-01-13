@@ -2571,3 +2571,17 @@ void editor_teardown(void) {
     vec_cleanup(&TABS);
     view_free(&MESSAGE);
 }
+
+#ifdef TESTING
+
+#include "tests.h"
+
+TESTS_START
+
+TEST_DEF(test_hello)
+	ASSERT(1);
+TEST_ENDDEF
+
+TESTS_END
+
+#endif

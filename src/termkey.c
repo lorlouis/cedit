@@ -529,3 +529,13 @@ int cmp_keys(
         enum KeyCode k) {
     return e->modifier == modifiers && e->key == k;
 }
+
+#ifdef TESTING
+
+#include "tests.h"
+
+TESTS_START
+
+TESTS_END
+
+#endif

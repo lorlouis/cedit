@@ -87,3 +87,13 @@ void style_entry_table_free(void) {
         style_entry_free(&STYLE_ENTRY_TABLE[i]);
     }
 }
+
+#ifdef TESTING
+
+#include "tests.h"
+
+TESTS_START
+
+TESTS_END
+
+#endif

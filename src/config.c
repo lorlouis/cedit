@@ -2,7 +2,7 @@
 
 const struct config CONFIG = {
     .tab_width = 4,
-    .use_spaces = true,
+    .use_spaces = false,
 #ifdef __MACH__
     .copy_command = "pbcopy",
     .paste_command = "pbpaste",
@@ -12,3 +12,13 @@ const struct config CONFIG = {
 #endif
     .poll_delay = 25000,
 };
+
+#ifdef TESTING
+
+#include "tests.h"
+
+TESTS_START
+
+TESTS_END
+
+#endif

@@ -418,3 +418,13 @@ Str str_from_cstr_len(const char *s, size_t len) {
 int str_is_empty(Str *s) {
     return vec_is_empty(&s->v);
 }
+
+#ifdef TESTING
+
+#include "tests.h"
+
+TESTS_START
+
+TESTS_END
+
+#endif

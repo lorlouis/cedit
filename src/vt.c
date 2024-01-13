@@ -261,3 +261,13 @@ ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width) {
     *nb_cols = sum;
     return off;
 }
+
+#ifdef TESTING
+
+#include "tests.h"
+
+TESTS_START
+
+TESTS_END
+
+#endif
