@@ -20,7 +20,7 @@ TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(SOURCE))
 
 TEST_EXECS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%,$(SOURCE))
 
-all: compile test
+all: $(BUILD_DIR) compile tests
 
 compile_commands.json:
 	bear -- make
@@ -50,6 +50,5 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
 
 .PHONY: clean
 clean:
-	rm -f $(OBJS) $(OUT) $(ENTRYPOINT_OBJ) $(TEST_OBJS) test_$(OUT) compile_commands.json
-	rm -rf docs
+	rm -f $(OBJS) $(OUT) $(ENTRYPOINT_OBJ) $(TEST_OBJS) test_$(OUT) $(TEST_EXECS) compile_commands.json
 	rmdir $(BUILD_DIR) 2>/dev/null || true
