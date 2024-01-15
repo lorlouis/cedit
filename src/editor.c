@@ -1797,6 +1797,17 @@ int visual_handle_key(struct KeyEvent *e) {
             } break;
             case 'd': {
                 view_erase(v);
+                struct ViewCursor a = v->view_cursor;
+                struct ViewCursor b = *as_ptr(&v->selection_end);
+                // if selection end comes before the current cursor
+                // move the cursor to selection end
+                if(a.off_y > b.off_y) {
+                    v->view_cursor = b;
+                } else if (a.off_x > b.off_x) {
+                    v->view_cursor = b;
+                }
+                // this skips the mode change setting the position
+                set_none(&v->selection_end);
                 mode_change(M_Normal);
             } break;
             case 'y': {
