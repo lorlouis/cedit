@@ -1,4 +1,5 @@
 #include "highlight.h"
+#include "vt.h"
 
 #include "xalloc.h"
 

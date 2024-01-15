@@ -228,6 +228,7 @@ void str_free(Str *s) {
     if(s->v.cap == SIZE_MAX) return;
     str_clear(s);
     vec_cleanup(&s->v);
+    if(s->char_pos.buf) vec_cleanup(&s->char_pos);
 }
 
 // Truncates up to new_len

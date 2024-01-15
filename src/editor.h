@@ -255,6 +255,10 @@ struct Window window_clone(struct Window *w);
 void window_free_views(struct Window *w);
 void window_free(struct Window *w);
 
+struct View* window_view_active(struct Window *w);
+
+void window_push(struct Window *win, struct Window *sub_win, enum SplitDir split);
+
 int window_view_push(struct Window *w, struct View v);
 
 int window_view_pop(struct Window *w, struct View *v);
@@ -285,6 +289,8 @@ int filemode_save(
         enum FileMode fm,
         const char *path,
         struct Buffer *buff);
+
+struct Buffer buffer_new(void);
 
 // Returns:
 //  0 on success
@@ -333,7 +339,7 @@ struct Tab* tab_active(void);
 
 int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac);
 
-struct Window* tab_active_window(struct Tab *tab);
+struct Window* tab_window_active(struct Tab *tab);
 
 struct View* tab_active_view(struct Tab *tab);
 

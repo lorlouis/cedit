@@ -4,6 +4,8 @@
 #include "vt.h"
 #include <stdint.h>
 
+#define SEARCH_HIGHLIGHT "search_highlight"
+
 // tries to register a style, already defined styles have priority
 // Returns:
 //   < 0 On error (out of space after priority)
