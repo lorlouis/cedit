@@ -846,14 +846,25 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
 
         if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
             if(write_escaped(&highlight, l, char_offset, len) == -1) return -1;
+            if(take_width < rp->line_max_width) {
+                if(write_char_escaped(&highlight, L' ', STDOUT_FILENO) == -1) return -1;
+            }
         } else if(view_selection_line_tail_partially_selected(&vs, char_offset, count + v->line_off)) {
-            for(size_t i = 0;i < (size_t)len; i++) {
+            size_t i = 0;
+            for(i = 0;i < (size_t)len; i++) {
                 if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
                     if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
                 } else {
                     if(write_escaped(&base_style, l, char_offset+i, 1) == -1) return -1;
                 }
             }
+            // draw trailing \n if the selection extend to it and if there is space to draw it
+            if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
+                if(take_width < rp->line_max_width) {
+                    if(write_char_escaped(&highlight, L' ', STDOUT_FILENO) == -1) return -1;
+                }
+            }
+
         } else {
             // not selected at all;
             if(write_escaped(&base_style, l, char_offset, len) == -1) return -1;
@@ -1786,9 +1797,57 @@ int visual_leave(void) {
 
 int visual_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
+    int direction = 1;
 
     if(e->modifier == 0) {
         switch(e->key) {
+            case 'G': {
+                view_move_cursor(v, 0, v->buff->lines.len);
+            } break;
+            case 'b':
+                direction = -1;
+            /* fall through */
+            case 'w': {
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                // line is empty
+                if(!str_len(&l->text)) {
+                    break;
+                }
+
+                int (*f)(wint_t);
+                utf32 c = view_get_cursor_char(v);
+                wint_t wc = utf32_to_wint(c);
+                if(isword(wc)) {
+                    f = isword;
+                } else if(iswordpunct(wc)) {
+                    f = iswordpunct;
+                } else {
+                    f = iswspace;
+                }
+
+                for(size_t i = v->view_cursor.off_x; i < str_len(&l->text); i++) {
+                    c = view_get_cursor_char(v);
+                    wc = utf32_to_wint(c);
+                    if(!f(wc)) break;
+                    view_move_cursor(v, direction, 0);
+                }
+            } break;
+            case '^': {
+                view_move_cursor_start(v);
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                for(size_t i = 0; i < str_len(&l->text); i++) {
+                    utf32 c = view_get_cursor_char(v);
+                    wint_t wc = utf32_to_wint(c);
+                    if(!iswspace(wc)) break;
+                    view_move_cursor(v, +1, 0);
+                }
+            } break;
+            case '$': {
+                view_move_cursor_end(v);
+            } break;
+            case '0': {
+                view_move_cursor_start(v);
+            } break;
             case '\e':
                 mode_change(M_Normal);
                 return 0;
