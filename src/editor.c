@@ -359,7 +359,10 @@ int write_escaped(Style *base_style, const struct Line *line, size_t off, size_t
 
         Style s = *base_style;
         if(i < line->style_ids.len) {
-            s = style_merge(s, *style_find_by_id(*VEC_GET(char, &line->style_ids, i)));
+            Style *cur = style_find_by_id(*VEC_GET(char, &line->style_ids, i));
+            if(cur) {
+                s = style_merge(s, *cur);
+            }
         }
 
         ret = write_char_escaped(&s, c, STDOUT_FILENO);
