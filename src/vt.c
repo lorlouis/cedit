@@ -121,6 +121,34 @@ Style style_new() {
     return (Style) {0};
 }
 
+Style style_merge(Style a, Style b) {
+    if(b.bg.t != COL_NONE) {
+        a.bg = b.bg;
+    }
+
+    if(b.fg.t != COL_NONE) {
+        a.fg = b.fg;
+    }
+
+    if(b.underline_color.t != COL_NONE) {
+        a.underline_color = b.underline_color;
+    }
+
+    if(b.weight) {
+        a.weight = b.weight;
+    }
+
+    if(b.inverted) {
+        a.inverted = b.inverted;
+    }
+
+    if(b.underline) {
+        a.underline = b.underline;
+    }
+
+    return a;
+}
+
 Style style_fg(Style s, const Colour c) {
     s.fg = c;
     return s;

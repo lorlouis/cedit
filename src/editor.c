@@ -357,12 +357,12 @@ int write_escaped(Style *base_style, const struct Line *line, size_t off, size_t
         assert(c && "null in middle of the line");
         assert(c != L'\n' && "new line in middle of the line");
 
-        Style * s = base_style;
+        Style s = *base_style;
         if(i < line->style_ids.len) {
-            s = style_find_by_id(*VEC_GET(char, &line->style_ids, i));
+            s = style_merge(s, *style_find_by_id(*VEC_GET(char, &line->style_ids, i)));
         }
 
-        ret = write_char_escaped(s, c, STDOUT_FILENO);
+        ret = write_char_escaped(&s, c, STDOUT_FILENO);
         if(ret == -1) return ret;
         count += ret;
     }

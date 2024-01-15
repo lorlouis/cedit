@@ -97,6 +97,8 @@ int style_reset(int fd);
 
 Style style_new();
 
+Style style_merge(Style a, Style b);
+
 Style style_fg(Style s, const Colour c);
 
 Style style_bg(Style s, const Colour c);
