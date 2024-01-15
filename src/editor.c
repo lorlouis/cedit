@@ -45,18 +45,19 @@ size_t render_width(Str *s, size_t len) {
     return width;
 }
 
-struct Line line_from_cstr(char *s) {
-    Str str = str_from_cstr(s);
-    return (struct Line) {
-        .render_width = render_width(&str, str_len(&str)),
-        .text = str,
-    };
-}
-
 struct Line line_new(void) {
     struct Line l = {0};
     l.text = str_new();
+    l.style_ids = VEC_NEW(uint8_t, 0);
     return l;
+}
+
+struct Line line_from_cstr(char *s) {
+    Str str = str_from_cstr(s);
+    struct Line line = line_new();
+    line.render_width = render_width(&str, str_len(&str));
+    line.text = str;
+    return line;
 }
 
 void line_free(struct Line *l) {
@@ -356,7 +357,12 @@ int write_escaped(Style *base_style, const struct Line *line, size_t off, size_t
         assert(c && "null in middle of the line");
         assert(c != L'\n' && "new line in middle of the line");
 
-        ret = write_char_escaped(base_style, c, STDOUT_FILENO);
+        Style * s = base_style;
+        if(i < line->style_ids.len) {
+            s = style_find_by_id(*VEC_GET(char, &line->style_ids, i));
+        }
+
+        ret = write_char_escaped(s, c, STDOUT_FILENO);
         if(ret == -1) return ret;
         count += ret;
     }
@@ -488,6 +494,12 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
     }
 
     return 0;
+}
+
+void view_clear_highlight(struct View *v) {
+    for(size_t i = 0; i < v->buff->lines.len; i++) {
+        vec_clear(&buffer_line_get(v->buff, i)->style_ids);
+    }
 }
 
 void view_set_cursor(struct View *v, size_t x, size_t y) {
@@ -659,7 +671,6 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
     if(off_x == 0) {
         new_x = v->view_cursor.target_x;
     } else {
-        // TODO(louis) fix this saving a position past the end of the line
         new_x = (ssize_t)v->view_cursor.off_x + off_x;
         v->view_cursor.target_x = new_x;
     }
@@ -1717,7 +1728,6 @@ int command_leave(void) {
 }
 
 int command_handle_key(struct KeyEvent *e) {
-    // TODO(louis) handle command buffer here
     if(e->modifier == 0) {
         if(e->key == '\e') {
             mode_change(M_Normal);
@@ -2370,6 +2380,8 @@ void view_search_re(struct View *v) {
     size_t matches_size = 50;
     regmatch_t *matches = xcalloc(matches_size, sizeof(regmatch_t));
 
+    view_clear_highlight(v);
+
     Maybe(size_t) selected = None();
 
     for(size_t i = 0; i < v->buff->lines.len; i++) {
@@ -2380,6 +2392,15 @@ void view_search_re(struct View *v) {
         // TODO(louis) maybe use REG_STARTED
         ret = regexec(v->buff->re_state.regex, str_as_cstr(&l->text), matches_size, matches, 0);
         if(ret == REG_NOMATCH) continue;
+
+        if(l->style_ids.len < str_len(&l->text)) {
+            size_t diff = str_len(&l->text) - l->style_ids.len;
+
+            char zero = 0;
+            for(size_t i = 0; i < diff; i++) {
+                vec_push(&l->style_ids, &zero);
+            }
+        }
 
         for(size_t j = 0; j < matches_size; j++) {
             // this api sucks so bad
@@ -2402,7 +2423,9 @@ void view_search_re(struct View *v) {
             }
 
             // TODO(louis) add search highlight here
-
+            char search_hi_id = style_find_id(SEARCH_HIGHLIGHT);
+            memset(l->style_ids.buf + match.col, search_hi_id, match.len);
+            
             vec_push(&v->buff->re_state.matches, &match);
         }
     }

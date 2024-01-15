@@ -12,6 +12,8 @@
 //  >= 0 On success (style id)
 int style_register(char *name, size_t name_len, Style style, uint8_t priority);
 
+int style_find_id(char *name);
+
 Style* style_find(char *name);
 
 Style* style_find_by_id(uint8_t id);
