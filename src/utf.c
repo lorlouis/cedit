@@ -160,6 +160,7 @@ utf32 wint_to_utf32(wint_t c);
 #include <string.h>
 #include "str.h"
 #include "tests.h"
+#include "vt.h"
 
 #define STR_SIZE(s) s, (sizeof(s)-1)
 

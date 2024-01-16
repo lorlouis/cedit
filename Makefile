@@ -27,7 +27,7 @@ compile_commands.json:
 
 .PHONY: doc
 doc: compile_commands.json
-	clang-doc --executor=all-TUs --format=html compile_commands.json --project-name $(OUT) --doxygen
+	cldoc generate $(FLAGS) -isysroot
 
 compile: $(ENTRYPOINT_OBJ) $(OBJS)
 	$(CC) -o $(OUT) $^ $(LFLAGS)
