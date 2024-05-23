@@ -50,13 +50,15 @@ void term_init(void) {
 
 void cleanup(void) {
     dprintf(STDOUT_FILENO, CUR_SHOW);
-    exit(0);
 }
 
-void cleanup_err(int _i __attribute__((unused))) {
+// signal handler that bails out and restores the terminal
+void cleanup_exit(int _i __attribute__((unused))) {
     dprintf(STDOUT_FILENO, CUR_SHOW);
+    alternate_buf_leave();
+    term_restore();
     // this is not safe in a signal handler
-    exit(1);
+    _exit(1);
 }
 
 // i parameter is ignored
@@ -107,13 +109,10 @@ int main(int argc, const char **argv) {
         WS.ws_row = 35;
     }
 
-    // register signals
+    // register resize signal
     signal(SIGWINCH, on_resize);
-    signal(SIGTERM, cleanup_err);
-    signal(SIGINT, cleanup_err);
 
     term_init();
-
 
     for(int i = 1; i < argc; i++) {
         struct Buffer *buff = calloc(1, sizeof(struct Buffer));
@@ -135,6 +134,11 @@ int main(int argc, const char **argv) {
     alternate_buf_enter();
     // register hook to return to normal buffer on exit
     atexit(alternate_buf_leave);
+
+    // register a function that restores the state of the terminal
+    // on exit signals
+    signal(SIGTERM, cleanup_exit);
+    signal(SIGINT, cleanup_exit);
 
     editor_init();
 
