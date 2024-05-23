@@ -1,8 +1,7 @@
 #include "utf.h"
 
 #include <assert.h>
-#include <limits.h>
-#define _XOPEN_SOURCE
+#define __USE_XOPEN // required for wcwidth to be defined
 #include <wchar.h>
 #include <stdlib.h>
 #include <locale.h>

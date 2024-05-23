@@ -244,7 +244,6 @@ void alternate_buf_leave(void) {
 size_t count_cols(const Str *line, int tab_width) {
     size_t sum = 0;
     size_t off = 0;
-    int width = 0;
     while(off<str_len(line)) {
         utf32 c = 0;
         if(str_get_char(line, off, &c)) return -1;
@@ -256,7 +255,8 @@ size_t count_cols(const Str *line, int tab_width) {
             return -1;
         }
 
-        width = utf32_width(c);
+        int width = tab_width;
+        if(c != L'\t') width = utf32_width(c);
 
         sum += width;
         off += 1;
@@ -275,7 +275,8 @@ ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width) {
         wint_t wc = utf32_to_wint(c);
         if(wc == 0 || wc == L'\n') break;
 
-        int width = utf32_width(c);
+        int width = tab_width;
+        if(c != L'\t') width = utf32_width(c);
 
         if(sum + width > *nb_cols) {
             *nb_cols = sum;
