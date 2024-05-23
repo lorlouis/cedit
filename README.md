@@ -2,7 +2,8 @@
 
 Name suggestions are welcome
 
-A small text editor with minimal dependencies
+A small utf-8 text editor with minimal dependencies
+(only supports LTR languages sadly)
 
 ## Status
 
