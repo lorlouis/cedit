@@ -28,21 +28,28 @@ When build with GCC it is recommended to build the project with
 
 ### TODO
 
-    [ ] Add proper syntax highlight, most likely regex based but tree-sitter could
-        be interesting.
-    [ ] Add proper key-sequence parser and state machine with timeout to allow
-        commands such as `gg` or `gd`
-    [ ] Make it so that unit tests fork so that segfaults
-        can be caught by the test framework
-    [ ] Add proper support for block copy
-    [ ] Add support for char offset so that long wrapped lines can be scrolled
-        smoothly.
+- [ ] Add proper syntax highlight, most likely regex based but tree-sitter could
+    be interesting.
+
+- [ ] Add proper key-sequence parser and state machine with timeout to allow
+    commands such as `gg` or `gd`
+
+- [ ] Make it so that unit tests fork so that segfaults
+    can be caught by the test framework
+
+- [ ] Add proper support for block copy
+
+- [ ] Add support for char offset so that long wrapped lines can be scrolled
+    smoothly.
 
 #### Not sure I'll ever do them
 
-    [ ] Switch utf.* to libgraphemes
-    [ ] add support for a basic lsp client (requires utf8<=>utf16 conversions)
-    [ ] Find a better name than cedit
-    [ ] Switch off Array-of-strings as the main data structure to hold text
-        (ropes are an easy choice, but piece tables would probably fit this
-        project better)
+- [ ] Switch utf.* to libgraphemes
+
+- [ ] add support for a basic lsp client (requires utf8<=>utf16 conversions)
+
+- [ ] Find a better name than cedit
+
+- [ ] Switch off Array-of-strings as the main data structure to hold text
+    (ropes are an easy choice, but piece tables would probably fit this
+    project better)
