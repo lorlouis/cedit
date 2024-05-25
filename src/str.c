@@ -301,12 +301,12 @@ size_t str_len(const Str *s) {
     if(s->char_pos.len) {
         size_t *off = bsearch(&s->offset_bytes,
                 s->char_pos.buf,
-                s->v.len,
-                s->v.type_size,
+                s->char_pos.len,
+                s->char_pos.type_size,
                 size_t_cmp
         );
         assert(off && "position must exist");
-        return s->char_pos.len-1 - *off;
+        return s->char_pos.len -1 - *off;
     }
     return s->v.len -1;
 }
@@ -439,6 +439,11 @@ int str_is_empty(Str *s) {
 #include "tests.h"
 
 TESTS_START
+
+TEST_DEF(test_str_len)
+    Str s = str_from_cstr("ç");
+    ASSERT(str_len(&s) == 1);
+TEST_ENDDEF
 
 TEST_DEF(test_str_tail_len)
     Str s = str_from_cstr("hello world");
