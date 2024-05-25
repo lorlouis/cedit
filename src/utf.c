@@ -145,8 +145,7 @@ int utf32_width(utf32 c) {
         switch(wc) {
             case L'\t':
                 return CONFIG.tab_width;
-            default: {}
-                //assert(0 && "unknown variant");
+            default: assert(0 && "unknown variant");
         }
     }
     return width;
