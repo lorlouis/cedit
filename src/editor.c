@@ -2487,7 +2487,7 @@ void view_search_re(struct View *v) {
             // TODO(louis) add search highlight here
             char search_hi_id = style_find_id(SEARCH_HIGHLIGHT);
             memset(l->style_ids.buf + match.col, search_hi_id, match.len);
-            
+
             vec_push(&v->buff->re_state.matches, &match);
         }
     }

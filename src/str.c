@@ -2,6 +2,7 @@
 #include "xalloc.h"
 #include <assert.h>
 #include <errno.h>
+#include <stdlib.h>
 
 #include "utf.h"
 #include "str.h"
@@ -146,7 +147,7 @@ Str str_new(void) {
     Str s = {0};
     s.v.type_size = sizeof(char);
     s.char_pos.type_size = sizeof(size_t);
-    s.offset = 0;
+    s.offset_bytes = 0;
     return s;
 }
 
@@ -290,10 +291,23 @@ size_t str_cstr_len(const Str *s) {
     return s->v.len -1;
 }
 
+static int size_t_cmp(const void *a, const void *b) {
+    return *(const size_t*)a - *(const size_t*)b;
+}
+
 // Returns the number of UTF-8 code points.
 size_t str_len(const Str *s) {
     if(s->v.len == 0) return 0;
-    if(s->char_pos.len) return s->char_pos.len-1;
+    if(s->char_pos.len) {
+        size_t *off = bsearch(&s->offset_bytes,
+                s->char_pos.buf,
+                s->v.len,
+                s->v.type_size,
+                size_t_cmp
+        );
+        assert(off && "position must exist");
+        return s->char_pos.len-1 - *off;
+    }
     return s->v.len -1;
 }
 
@@ -326,7 +340,7 @@ size_t str_get_char_byte_idx(const Str *s, size_t idx) {
     if(s->char_pos.len) {
         size_t *new_idx = VEC_GET(size_t, &s->char_pos, idx);
         // substract the offset from the head of the original slice if any
-        if(new_idx) return *new_idx - s->offset;
+        if(new_idx) return *new_idx - s->offset_bytes;
         return -1;
     } else if (idx < s->v.len) return idx;
     return -1;
@@ -375,7 +389,7 @@ Str str_tail(const Str *s, size_t idx) {
     return (Str) {
         .v = v,
         .char_pos = char_pos,
-        .offset = byte_off + s->offset,
+        .offset_bytes = byte_off + s->offset_bytes,
     };
 }
 
@@ -425,6 +439,13 @@ int str_is_empty(Str *s) {
 #include "tests.h"
 
 TESTS_START
+
+TEST_DEF(test_str_tail_len)
+    Str s = str_from_cstr("hello world");
+    ASSERT(str_len(&s) == 11);
+    Str b = str_tail(&s, 6);
+    ASSERT(str_len(&b) == 5);
+TEST_ENDDEF
 
 TESTS_END
 

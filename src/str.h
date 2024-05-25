@@ -42,7 +42,7 @@ typedef struct {
     Vec v;
     Vec char_pos;
     // only used on slices
-    size_t offset;
+    size_t offset_bytes;
 } Str;
 
 Str str_new(void);
