@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <sys/termios.h>
 #include <string.h>
+#include <assert.h>
 
 #include "config.h"
 #include "termkey.h"
@@ -143,8 +144,10 @@ int main(int argc, const char **argv) {
     editor_init();
 
     editor_render(&WS);
+    int ret;
     while(RUNNING) {
-        if(handle_keys() || REDRAW) {
+        if((ret = handle_keys())  || REDRAW) {
+            assert(ret >= 0 && "bad keys");
             REDRAW = 0;
             editor_render(&WS);
         }

@@ -452,6 +452,11 @@ TEST_DEF(test_str_tail_len)
     ASSERT(str_len(&b) == 5);
 TEST_ENDDEF
 
+TEST_DEF(test_str_len)
+    Str s = str_from_cstr("ア");
+    ASSERT(str_len(&s) == 1);
+TEST_ENDDEF
+
 TESTS_END
 
 #endif

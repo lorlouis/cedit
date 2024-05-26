@@ -8,6 +8,8 @@
 #include <limits.h>
 #include <ctype.h>
 
+#include <assert.h>
+
 #include "utf.h"
 
 // Attempts to read an unsigned int from fd
@@ -40,13 +42,13 @@ static int read_utf8(int fd, char (*out)[4], int count) {
     char c;
     for(int i = 1; i < count; i++) {
         ret = read(fd, &c, 1);
+        assert(c != 0 && "null byte in stream");
         if(ret == -1) return -1;
         // missing a byte
         if(ret == 0) return -2;
         // the next byte is invalid
         if(!utf8_is_follow(c)) return -2;
         (*out)[i] = c;
-        i+= 1;
     }
     return 0;
 }
@@ -54,7 +56,6 @@ static int read_utf8(int fd, char (*out)[4], int count) {
 int readkey(int fd, struct KeyEvent *restrict e) {
     unsigned char c = 0;
     int ret = 0;
-
 
     ret = read(fd, &c, 1);
     if(ret == -1) return -1;
@@ -66,6 +67,10 @@ int readkey(int fd, struct KeyEvent *restrict e) {
         char s[4] = {c, 0, 0 , 0};
         if(read_utf8(fd, &s, utf8_len) < 0) return -1;
         if(-1 == utf8_to_utf32(s, sizeof(s), &e->key)) return -1;
+        e->modifier = 0;
+        return 1;
+    } else if (utf8_len == 1 && isprint(c)) {
+        e->key = c;
         e->modifier = 0;
         return 1;
     }
@@ -533,8 +538,27 @@ int cmp_keys(
 #ifdef TESTING
 
 #include "tests.h"
+#include <stdio.h>
 
 TESTS_START
+
+TEST_DEF(readkey_japanese)
+    FILE *f = tmpfile();
+    int fno = fileno(f);
+    struct KeyEvent e = {0};
+    int ret = write(fno, "アイドル", 12);
+    ASSERT(ret == 12);
+    rewind(f);
+
+    ret = readkey(fno, &e);
+    ASSERT(ret == 1);
+    ASSERT(e.key = 12450);
+
+    ret = readkey(fno, &e);
+    ASSERT(ret == 1);
+    ASSERT(e.key = 12452);
+
+TEST_ENDDEF
 
 TESTS_END
 
