@@ -5,8 +5,7 @@ Name suggestions are welcome
 A small utf-8 text editor with minimal dependencies
 (only supports LTR languages sadly)
 
-A demo of the editor in action
-[![a demo of the editor in action](https://img.youtube.com/vi/HsTKXVJA5yw/0.jpg)](https://www.youtube.com/watch?v=HsTKXVJA5yw)
+[![A demo of the editor in action](https://img.youtube.com/vi/HsTKXVJA5yw/0.jpg)](https://www.youtube.com/watch?v=HsTKXVJA5yw)
 
 ## Status
 
