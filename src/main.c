@@ -147,7 +147,7 @@ int main(int argc, const char **argv) {
     int ret;
     while(RUNNING) {
         if((ret = handle_keys())  || REDRAW) {
-            assert(ret != -1 && "bad keys");
+            assert(ret >= 0 && "bad keys");
             REDRAW = 0;
             editor_render(&WS);
         }
