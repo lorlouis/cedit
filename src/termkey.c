@@ -493,7 +493,7 @@ int keyevent_fmt(struct KeyEvent *e, char *buff, size_t len) {
                     utf32_to_utf8(e->key, buff + off, len - off - utf_size);
                 }
                 off += utf_size;
-            } else if(isprint(e->key)) {
+            } else if(isprint(e->key) && !isspace(e->key)) {
                 if(buff) {
                     if(off + 1 >= len) return -1;
                     if(buff) {
@@ -544,19 +544,52 @@ TESTS_START
 
 TEST_DEF(readkey_japanese)
     FILE *f = tmpfile();
-    int fno = fileno(f);
-    struct KeyEvent e = {0};
-    int ret = write(fno, "アイドル", 12);
-    ASSERT(ret == 12);
-    rewind(f);
+    if(!f) {
+        ASSERT(f && "tmp file could not be opened");
+    } else {
+        int fno = fileno(f);
+        struct KeyEvent e = {0};
+        int ret = write(fno, "アイドル", 12);
+        ASSERT(ret == 12);
+        rewind(f);
 
-    ret = readkey(fno, &e);
-    ASSERT(ret == 1);
-    ASSERT(e.key = 12450);
+        ret = readkey(fno, &e);
+        ASSERT(ret == 1);
+        ASSERT(e.key = 12450);
 
-    ret = readkey(fno, &e);
-    ASSERT(ret == 1);
-    ASSERT(e.key = 12452);
+        ret = readkey(fno, &e);
+        ASSERT(ret == 1);
+        ASSERT(e.key = 12452);
+    }
+TEST_ENDDEF
+
+
+TEST_DEF(keyevent_fmt)
+    #define BUF_LEN 10
+    char buf[BUF_LEN] = {0};
+
+    struct KeyEvent e = {
+        .modifier = 0,
+        .key = 23454,
+    };
+
+    int len = keyevent_fmt(&e, buf, BUF_LEN);
+    ASSERT(len == 3);
+
+    const char *expected = "实";
+
+    // assert that the null terminator was written
+    ASSERT(!strncmp(buf, expected, 4));
+
+    e = (struct KeyEvent) {
+        .modifier = KM_Meta,
+        .key = 23,
+    };
+
+    len = keyevent_fmt(&e, buf, BUF_LEN);
+    ASSERT(len < 0);
+    printf("%s\n", buf);
+
 
 TEST_ENDDEF
 
