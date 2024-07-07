@@ -32,6 +32,8 @@ doc: compile_commands.json
 compile: $(ENTRYPOINT_OBJ) $(OBJS)
 	$(CC) -o $(OUT) $^ $(LFLAGS)
 
+.PHONY: test
+test: tests
 .PHONY: tests
 tests: $(TEST_EXECS)
 	echo $^ | xargs -n 1 bash -c

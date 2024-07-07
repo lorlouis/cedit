@@ -2527,7 +2527,7 @@ void editor_teardown(void) {
 TESTS_START
 
 TEST_DEF(test_hello)
-	ASSERT(1);
+    ASSERT(1);
 TEST_ENDDEF
 
 TESTS_END
