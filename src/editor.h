@@ -143,6 +143,12 @@ typedef struct ViewCursor {
 } ViewCursor;
 
 
+struct ReMatch {
+    size_t line;
+    size_t col;
+    size_t len;
+};
+
 struct ReState {
     struct ViewCursor original_cursor;
     regex_t *regex;
@@ -155,7 +161,6 @@ struct ReState {
 void re_state_clear_matches(struct ReState *re_state);
 
 void re_state_reset(struct ReState *re_state);
-
 
 // Null initialise {0} to get a scratch buffer
 struct Buffer {

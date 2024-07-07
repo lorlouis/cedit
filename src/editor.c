@@ -410,12 +410,6 @@ void view_clear(struct View *v) {
     v->buff->lines.len = 0;
 }
 
-struct ReMatch {
-    size_t line;
-    size_t col;
-    size_t len;
-};
-
 void re_state_clear_matches(struct ReState *re_state) {
     vec_clear(&re_state->matches);
     set_none(&re_state->selected);
