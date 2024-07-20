@@ -82,6 +82,13 @@ void line_trunc(struct Line *l, size_t idx) {
     l->render_width -= trunked_width;
 }
 
+void line_tail(struct Line *l, size_t idx) {
+    Str tail = str_tail(&l->text, idx);
+    size_t tail_width = render_width(&tail, str_len(&tail));
+    l->text = tail;
+    l->render_width = tail_width;
+}
+
 int line_remove(struct Line *l, size_t start, size_t end) {
     int ret = str_remove(&l->text, start, end);
     l->render_width = render_width(&l->text, str_len(&l->text));
@@ -730,12 +737,18 @@ static struct RenderPlan view_plan_render(
     size_t last_line_chars = SIZE_MAX;
 
     size_t line_idx;
+
+    size_t first_line_char_off = v->first_line_char_off;
+
     for(line_idx = v->line_off; line_idx < v->buff->lines.len; line_idx++) {
-        struct Line *l = buffer_line_get(v->buff, line_idx);
+        struct Line l = *buffer_line_get(v->buff, line_idx);
+        if(line_idx == v->line_off) {
+            line_tail(&l, first_line_char_off);
+        }
 
         // compute the position of the cursor
         if(line_idx == v->view_cursor.off_y) {
-            Str cursor_head = str_head(&l->text, v->view_cursor.off_x +1);
+            Str cursor_head = str_head(&l.text, v->view_cursor.off_x +1);
             uint16_t cursor_head_render_width =
                 count_cols(&cursor_head, CONFIG.tab_width);
 
@@ -750,15 +763,15 @@ static struct RenderPlan view_plan_render(
             ac.row = cursor_y + vp->off_y;
         }
 
-        if(l->render_width > line_max_width) {
+        if(l.render_width > line_max_width) {
             uint16_t render_height =
-                l->render_width / line_max_width
-                + (l->render_width % line_max_width != 0);
+                l.render_width / line_max_width
+                + (l.render_width % line_max_width != 0);
 
             if(render_height + full_lines > lines_max) {
                 // too big to fit completely
                 size_t nb_cols = line_max_width;
-                ssize_t ret = take_cols(&l->text, &nb_cols, CONFIG.tab_width);
+                ssize_t ret = take_cols(&l.text, &nb_cols, CONFIG.tab_width);
                 assert(ret != -1);
                 last_line_chars = ret;
                 break;
@@ -778,15 +791,30 @@ static struct RenderPlan view_plan_render(
         && last_line_chars <= v->view_cursor.off_x;
 
     if(cursor_line_out_of_screen || cursor_pos_out_of_screen ) {
-        v->line_off += 1;
-        assert(v->line_off < v->buff->lines.len);
-        return view_plan_render(v, vp, ws);
+
+        struct Line *first_line = buffer_line_get(v->buff, v->line_off);
+        if(first_line->render_width > vp->width) {
+            size_t target_width = vp->width;
+            ssize_t char_off = take_cols(&first_line->text, &target_width, CONFIG.tab_width);
+            assert(char_off >= 0);
+            first_line_char_off += char_off;
+            lines_count += 1;
+            // TODO(louis) most likely buggy
+            // NB(louis) definitely buggy, the ac needs to be recomputed
+        } else {
+            v->first_line_char_off = 0;
+            v->line_off += 1;
+            assert(v->line_off < v->buff->lines.len);
+            return view_plan_render(v, vp, ws);
+        }
     }
+
 
     return (struct RenderPlan) {
         .vp = real_vp,
         .ws = ws,
         .fully_rendered_lines = lines_count,
+        .first_line_char_off = first_line_char_off,
         .last_line_chars = last_line_chars,
         .cursor = ac,
         .real_height = real_height,
@@ -818,7 +846,12 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
     size_t count;
     int spill = 0;
     for(count = 0; count < rp->fully_rendered_lines; count++) {
-        struct Line *l = buffer_line_get(v->buff, count + v->line_off);
+        struct Line l = *buffer_line_get(v->buff, count + v->line_off);
+
+        if(!count) {
+            line_tail(&l, rp->first_line_char_off);
+        }
+
         // print first "real" line
         set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
         // print line number
@@ -833,13 +866,13 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
         }
 
         size_t take_width = rp->line_max_width;
-        ssize_t len = take_cols(&l->text, &take_width, CONFIG.tab_width);
+        ssize_t len = take_cols(&l.text, &take_width, CONFIG.tab_width);
         if(len == -1) return -1;
 
         size_t char_offset = 0;
 
         if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
-            if(write_escaped(&highlight, l, char_offset, len) == -1) return -1;
+            if(write_escaped(&highlight, &l, char_offset, len) == -1) return -1;
             if(take_width < rp->line_max_width) {
                 if(write_char_escaped(&highlight, L' ', STDOUT_FILENO) == -1) return -1;
             }
@@ -847,9 +880,9 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
             size_t i = 0;
             for(i = 0;i < (size_t)len; i++) {
                 if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
-                    if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
+                    if(write_escaped(&highlight, &l, char_offset+i, 1) == -1) return -1;
                 } else {
-                    if(write_escaped(&base_style, l, char_offset+i, 1) == -1) return -1;
+                    if(write_escaped(&base_style, &l, char_offset+i, 1) == -1) return -1;
                 }
             }
             // draw trailing \n if the selection extend to it and if there is space to draw it
@@ -861,7 +894,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
 
         } else {
             // not selected at all;
-            if(write_escaped(&base_style, l, char_offset, len) == -1) return -1;
+            if(write_escaped(&base_style, &l, char_offset, len) == -1) return -1;
         }
         char_offset += len;
 
@@ -871,7 +904,7 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
         }
 
         // print the wraparound lines
-        while(char_offset < str_len(&l->text)) {
+        while(char_offset < str_len(&l.text)) {
             spill += 1;
             set_cursor_pos(rp->vp->off_x, rp->vp->off_y+count+spill);
             if(rp->num_width) {
@@ -885,23 +918,23 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
             }
 
             take_width = rp->line_max_width;
-            Str rest = str_tail(&l->text, char_offset);
+            Str rest = str_tail(&l.text, char_offset);
             ssize_t len = take_cols(&rest, &take_width, CONFIG.tab_width);
             if(len == -1) return -1;
 
             if(view_selection_line_fully_selected(&vs, count + v->line_off)) {
-                if(write_escaped(&highlight, l, char_offset, len) == -1) return -1;
+                if(write_escaped(&highlight, &l, char_offset, len) == -1) return -1;
             } else if(view_selection_line_tail_partially_selected(&vs, char_offset, count + v->line_off)) {
                 for(size_t i = 0;i < (size_t)len; i++) {
                     if(view_selection_position_selected(&vs, char_offset+i, count+v->line_off)) {
-                        if(write_escaped(&highlight, l, char_offset+i, 1) == -1) return -1;
+                        if(write_escaped(&highlight, &l, char_offset+i, 1) == -1) return -1;
                     } else {
-                        if(write_escaped(&base_style, l, char_offset+i, 1) == -1) return -1;
+                        if(write_escaped(&base_style, &l, char_offset+i, 1) == -1) return -1;
                     }
                 }
             } else {
                 // not selected at all;
-                if(write_escaped(&base_style, l, char_offset, len) == -1) return -1;
+                if(write_escaped(&base_style, &l, char_offset, len) == -1) return -1;
             }
             char_offset += len;
             size_t fill = rp->line_max_width - take_width;

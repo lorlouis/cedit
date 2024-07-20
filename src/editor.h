@@ -211,6 +211,7 @@ struct RenderPlan {
     const ViewPort *vp;
     const struct winsize *ws;
     size_t fully_rendered_lines;
+    size_t first_line_char_off;
     size_t last_line_chars;
     struct AbsoluteCursor cursor;
     uint16_t real_height;
@@ -222,6 +223,7 @@ struct RenderPlan {
 
 struct View {
     size_t line_off;
+    size_t first_line_char_off;
     struct ViewCursor view_cursor;
     struct Buffer *buff;
     struct ViewOpt options;

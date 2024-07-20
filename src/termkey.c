@@ -505,7 +505,6 @@ int keyevent_fmt(struct KeyEvent *e, char *buff, size_t len) {
                 size_t size = snprintf(NULL, 0, "0x%x", e->key);
                 if(buff) {
                     if(off-1 + size >= len) return -1;
-                    puts("b");
                 }
                 off += size;
             }
