@@ -39,6 +39,15 @@ int utf8_byte_count(utf8 c) {
     return 1;
 }
 
+size_t utf8_find_start(const utf8 *s, size_t len, size_t idx) {
+    if(idx >= len) return -1;
+    while(idx > 0) {
+        if(utf8_is_follow(s[idx])) idx--;
+    }
+    if(utf8_is_follow(s[idx])) return -1;
+    return idx;
+}
+
 int utf32_len_utf8(utf32 c) {
     switch(c) {
         case 0x000000 ... 0x00007f:

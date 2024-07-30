@@ -132,4 +132,10 @@ size_t count_cols(const Str *restrict line, int tab_width);
 //  -1 on err
 ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width);
 
+// Returns
+//  the character offset into line to attain at most nb_cols render width,
+//  starting from the last character
+//  -1 on err
+ssize_t take_cols_rev(const Str *restrict line, size_t *nb_cols, int tab_width);
+
 #endif

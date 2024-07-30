@@ -82,11 +82,26 @@ void line_trunc(struct Line *l, size_t idx) {
     l->render_width -= trunked_width;
 }
 
-void line_tail(struct Line *l, size_t idx) {
+// Returns the borrowed head of l
+struct Line line_head(struct Line *l, size_t idx) {
+    Str head = str_head(&l->text, idx);
+    size_t head_width = render_width(&head, str_len(&head));
+    return (struct Line) {
+        .text = head,
+        .style_ids = l->style_ids,
+        .render_width = head_width,
+    };
+}
+
+// Returns the borrowed tail of l
+struct Line line_tail(struct Line *l, size_t idx) {
     Str tail = str_tail(&l->text, idx);
     size_t tail_width = render_width(&tail, str_len(&tail));
-    l->text = tail;
-    l->render_width = tail_width;
+    return (struct Line) {
+        .text = tail,
+        .style_ids = l->style_ids,
+        .render_width = tail_width,
+    };
 }
 
 int line_remove(struct Line *l, size_t start, size_t end) {
@@ -353,7 +368,6 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
 }
 
 int write_escaped(Style *base_style, const struct Line *line, size_t off, size_t len) {
-
     int count = 0;
     int ret;
     for(size_t i = off; i < len+off; i++) {
@@ -509,6 +523,9 @@ void view_clear_highlight(struct View *v) {
 void view_set_cursor(struct View *v, size_t x, size_t y) {
     if(!v->buff || !v->buff->lines.len) return;
     v->view_cursor.off_y = y < v->buff->lines.len ? y : v->buff->lines.len-1;
+    if(v->view_cursor.off_y < v->line_off) {
+        v->line_off = v->view_cursor.off_y;
+    }
     struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
 
     v->view_cursor.off_x = x < str_len(&l->text) ? x : str_len(&l->text);
@@ -684,147 +701,7 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 
     view_set_cursor(v, new_x, new_y);
 }
-
-
-int render_plan_line_count(struct RenderPlan *rp) {
-    return rp->fully_rendered_lines + (rp->last_line_chars != SIZE_MAX);
-}
-
-static struct RenderPlan view_plan_render(
-        struct View *v,
-        ViewPort *vp,
-        const struct winsize *ws) {
-
-    // reset the cursor, the current cursor might be out of range
-    // if another view is editing the same buffer
-    view_set_cursor(v, v->view_cursor.off_x, v->view_cursor.off_y);
-
-    ViewPort *real_vp = vp;
-
-    if(v->viewport_locked) {
-        real_vp = &v->vp;
-    }
-
-    uint16_t real_height = viewport_viewable_height(real_vp, ws);
-    uint16_t real_width = viewport_viewable_width(real_vp, ws);
-
-    // if the cursor is off the screen, move either the cursor
-    // or the line offset down
-    if (v->line_off > v->view_cursor.off_y) {
-        v->line_off = v->view_cursor.off_y;
-    } else if(v->view_cursor.off_y - v->line_off > real_height) {
-        v->line_off += (v->view_cursor.off_y - v->line_off) - real_height;
-    }
-
-    int prefix_width = 0;
-    int num_width = 0;
-    // check if there is a line num
-    if(!v->options.no_line_num) {
-        num_width = buffer_num_width(v->buff);
-        prefix_width += num_width;
-    }
-
-    uint16_t line_max_width = real_width - prefix_width;
-    uint16_t lines_max = real_height;
-
-    struct AbsoluteCursor ac = {
-        .col = vp->off_x + prefix_width,
-        .row = vp->off_y,
-    };
-
-    uint16_t full_lines = 0;
-    uint16_t lines_count = 0;
-    size_t last_line_chars = SIZE_MAX;
-
-    size_t line_idx;
-
-    size_t first_line_char_off = v->first_line_char_off;
-
-    for(line_idx = v->line_off; line_idx < v->buff->lines.len; line_idx++) {
-        struct Line l = *buffer_line_get(v->buff, line_idx);
-        if(line_idx == v->line_off) {
-            line_tail(&l, first_line_char_off);
-        }
-
-        // compute the position of the cursor
-        if(line_idx == v->view_cursor.off_y) {
-            Str cursor_head = str_head(&l.text, v->view_cursor.off_x +1);
-            uint16_t cursor_head_render_width =
-                count_cols(&cursor_head, CONFIG.tab_width);
-
-            uint16_t cursor_head_render_height =
-                cursor_head_render_width / line_max_width;
-
-            size_t cursor_y = cursor_head_render_height + full_lines;
-            size_t cursor_x = cursor_head_render_width % line_max_width;
-
-            // cursor's absolute position
-            ac.col = cursor_x + vp->off_x + prefix_width;
-            ac.row = cursor_y + vp->off_y;
-        }
-
-        if(l.render_width > line_max_width) {
-            uint16_t render_height =
-                l.render_width / line_max_width
-                + (l.render_width % line_max_width != 0);
-
-            if(render_height + full_lines > lines_max) {
-                // too big to fit completely
-                size_t nb_cols = line_max_width;
-                ssize_t ret = take_cols(&l.text, &nb_cols, CONFIG.tab_width);
-                assert(ret != -1);
-                last_line_chars = ret;
-                break;
-            }
-            full_lines += render_height;
-        } else {
-            full_lines += 1;
-        }
-        lines_count += 1;
-        assert(full_lines <= lines_max);
-        if(full_lines == lines_max) break;
-    }
-
-    _Bool cursor_line_out_of_screen = line_idx < v->view_cursor.off_y;
-
-    _Bool cursor_pos_out_of_screen = line_idx == v->view_cursor.off_y
-        && last_line_chars <= v->view_cursor.off_x;
-
-    if(cursor_line_out_of_screen || cursor_pos_out_of_screen ) {
-
-        struct Line *first_line = buffer_line_get(v->buff, v->line_off);
-        if(first_line->render_width > vp->width) {
-            size_t target_width = vp->width;
-            ssize_t char_off = take_cols(&first_line->text, &target_width, CONFIG.tab_width);
-            assert(char_off >= 0);
-            first_line_char_off += char_off;
-            lines_count += 1;
-            // TODO(louis) most likely buggy
-            // NB(louis) definitely buggy, the ac needs to be recomputed
-        } else {
-            v->first_line_char_off = 0;
-            v->line_off += 1;
-            assert(v->line_off < v->buff->lines.len);
-            return view_plan_render(v, vp, ws);
-        }
-    }
-
-
-    return (struct RenderPlan) {
-        .vp = real_vp,
-        .ws = ws,
-        .fully_rendered_lines = lines_count,
-        .first_line_char_off = first_line_char_off,
-        .last_line_chars = last_line_chars,
-        .cursor = ac,
-        .real_height = real_height,
-        .real_width = real_width,
-        .line_max_width = line_max_width,
-        .num_width = num_width,
-        .prefix_width = prefix_width,
-    };
-}
-
+/*
 static int render_plan_render(const struct View *restrict v, struct AbsoluteCursor *ac) {
     const struct RenderPlan *rp = &v->rp;
     Style base_style = v->style;
@@ -993,12 +870,169 @@ static int render_plan_render(const struct View *restrict v, struct AbsoluteCurs
 
     return 0;
 }
+*/
 
+uint16_t view_num_width(const struct View *v) {
+    if(v->options.no_line_num) return 0;
+    // log10 100 = 2, so +1 for 100 and another +1
+    // for a space between the number and the text
+    return log10(v->buff->lines.len) + 2;
+}
+
+uint16_t view_inner_width(
+        const struct View *v,
+        const ViewPort * vp) {
+    uint16_t width = vp->width;
+
+    uint16_t num_width = view_num_width(v);
+    if(num_width > width) return 0;
+    width -= num_width;
+
+    return width;
+}
 
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
-    struct RenderPlan rp = view_plan_render(v, vp, ws);
-    v->rp = rp;
-    return render_plan_render(v, ac);
+    Style base_style = v->style;
+    Style line_num_style = style_fg(base_style, colour_vt(VT_GRA));
+    Style highlight = style_bg(base_style, colour_vt(VT_BLU));
+
+    uint16_t width = view_inner_width(v, vp);
+
+    uint16_t height = vp->height;
+
+    // check if the cursor is beyond the end of the screen
+    size_t first_line_char_off = v->first_line_char_off;
+    uint16_t leading_height = 0;
+    {
+        ssize_t line_off = v->view_cursor.off_y;
+        while(line_off >= (ssize_t)v->line_off && leading_height < height-1) {
+            struct Line l = *buffer_line_get(v->buff, line_off);
+            if(line_off == v->view_cursor.off_y) {
+                l = line_head(&l, v->view_cursor.off_x+1);
+            } else if(line_off == v->line_off) {
+                l = line_head(&l, v->first_line_char_off);
+            }
+
+            if(l.render_width > width) {
+                leading_height += (l.render_width % width != 0);
+                leading_height += l.render_width / width;
+                if(leading_height > height) {
+                    size_t diff = leading_height - height;
+                    size_t col_off = width * diff;
+                    first_line_char_off += take_cols(&l.text, &col_off, CONFIG.tab_width);
+                }
+            } else {
+                leading_height += 1;
+            }
+            line_off--;
+        }
+        if(line_off < 0) line_off = 0;
+        if(line_off > v->line_off) {
+            v->line_off = line_off;
+        } else {
+            v->first_line_char_off = first_line_char_off;
+        }
+    }
+
+    // render text
+    size_t text_height = 0;
+    size_t line_idx = 0;
+    while(text_height < height) {
+        struct Line *ptr = buffer_line_get(
+                v->buff,
+                v->line_off + line_idx);
+        if(!ptr) break;
+        struct Line l = *ptr;
+
+        if(first_line_char_off && line_idx == 0) {
+            l = line_tail(&l, first_line_char_off);
+        }
+        // TODO(louis) highlight
+        set_cursor_pos(vp->off_x, vp->off_y+text_height);
+        // print line number
+        if(view_num_width(v) > 0) {
+            style_fmt(
+                    &line_num_style,
+                    STDOUT_FILENO,
+                    "%*ld ",
+                    view_num_width(v) -1,
+                    line_idx + v->line_off + 1
+                );
+        }
+
+        size_t target_width = width;
+        ssize_t idx = take_cols(
+                &l.text,
+                &target_width,
+                CONFIG.tab_width);
+        if(idx == -1) return -1;
+        if(write_escaped(&v->style, &l, 0, idx) == -1) assert(0);
+
+        if(ac && line_idx + v->line_off == v->view_cursor.off_y) {
+            size_t line_width = render_width(&l.text, v->view_cursor.off_x);
+            ac->row = vp->off_y
+                + text_height
+                + line_width / width;
+            ac->col = vp->off_x
+                + view_num_width(v)
+                + line_width % width;
+        }
+
+        size_t fill = width - target_width;
+        if(fill) {
+            style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
+        }
+
+        l = line_tail(&l, idx);
+        line_idx += 1;
+        text_height += 1;
+        // print the wraparound lines
+        while(str_len(&l.text) && text_height < height) {
+            set_cursor_pos(vp->off_x, vp->off_y+text_height);
+            // print line number
+            if(view_num_width(v) > 0) {
+                style_fmt(
+                        &line_num_style,
+                        STDOUT_FILENO,
+                        "%*c",
+                        view_num_width(v),
+                        ' '
+                    );
+            }
+            size_t target_width = width;
+            size_t idx = take_cols(
+                    &l.text,
+                    &target_width,
+                    CONFIG.tab_width);
+            if(idx == SIZE_MAX) assert(0);
+            if(write_escaped(&v->style, &l, 0, idx) == -1) return -1;
+
+            size_t fill = width - target_width;
+            if(fill) {
+                style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
+            }
+
+            l = line_tail(&l, idx);
+            text_height += 1;
+        }
+    }
+
+    // render empty lines
+    while(text_height < height) {
+        set_cursor_pos(vp->off_x, vp->off_y+text_height);
+        if(view_num_width(v) > 0) {
+            style_fmt(
+                    &line_num_style,
+                    STDOUT_FILENO,
+                    "%*c",
+                    view_num_width(v)-1,
+                    '~'
+                );
+        }
+        style_fmt(&base_style, STDOUT_FILENO, "%*c", vp->width, ' ');
+        text_height += 1;
+    }
+    return 0;
 }
 
 struct Buffer* buffer_rc_inc(struct Buffer *buff) {
@@ -1657,9 +1691,11 @@ int normal_handle_key(struct KeyEvent *e) {
             } break;
             case 'y': {
                 if(v->line_off > 0) {
-                    if(v->view_cursor.off_y == render_plan_line_count(&v->rp) + v->line_off -1) {
+                    /*
+                    if(v->view_cursor.off_y == render_plan_line_count(&v->vp) + v->line_off -1) {
                         view_move_cursor(v, 0, -1);
                     }
+                    */
                     v->line_off -= 1;
                 }
             } break;
