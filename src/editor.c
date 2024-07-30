@@ -20,6 +20,8 @@
 
 struct winsize WS = {0};
 
+const char *FILEMODE_REPR[2] = {"RW", "RO"};
+
 int RUNNING = 1;
 
 struct ViewSelection {
@@ -453,7 +455,7 @@ void re_state_reset(struct ReState *re_state) {
 }
 
 void view_free(struct View *v) {
-    buffer_rc_dec(v->buff);
+    if(v->buff) buffer_rc_dec(v->buff);
 }
 
 int view_write(struct View *v, const char *restrict s, size_t len) {
@@ -2131,13 +2133,13 @@ int active_line_render(struct winsize *ws) {
     style_fmt(
             &active_line_style,
             STDOUT_FILENO,
-            "[%s] (%ld, %ld) %ld/%ld %ld",
+            "[%s] (%ld, %ld) %ld/%ld %s",
             mode_current().mode_str,
             v->view_cursor.off_x + 1,
             v->view_cursor.off_y + 1,
             v->line_off + 1,
             v->buff->lines.len,
-            tab_active()->active_window
+            FILEMODE_REPR[v->buff->fm]
             );
 
     return 0;
