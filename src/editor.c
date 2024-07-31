@@ -955,18 +955,21 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
                 v->line_off + line_idx);
         if(!ptr) break;
         struct Line l = *ptr;
+        char *fmt_str = "%*ld ";
 
         if(v->first_line_char_off && line_idx == 0) {
             l = line_tail(&l, v->first_line_char_off);
+            fmt_str = "%*ld^";
         }
         // TODO(louis) highlight
         set_cursor_pos(vp->off_x, vp->off_y+text_height);
         // print line number
         if(view_num_width(v) > 0) {
+
             style_fmt(
                     &line_num_style,
                     STDOUT_FILENO,
-                    "%*ld ",
+                    fmt_str,
                     view_num_width(v) -1,
                     line_idx + v->line_off + 1
                 );
@@ -981,7 +984,11 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
         if(write_escaped(&v->style, &l, 0, idx) == -1) assert(0);
 
         if(ac && line_idx + v->line_off == v->view_cursor.off_y) {
-            size_t line_width = render_width(&l.text, v->view_cursor.off_x - v->first_line_char_off);
+            size_t line_cursor_pos = v->view_cursor.off_x;
+            if(v->view_cursor.off_y == v->line_off) {
+                line_cursor_pos += v->first_line_char_off;
+            }
+            size_t line_width = render_width(&l.text, line_cursor_pos);
             ac->row = vp->off_y
                 + text_height
                 + line_width / width;
