@@ -20,7 +20,7 @@
 
 struct winsize WS = {0};
 
-const char *FILEMODE_REPR[2] = {"RW", "RO"};
+const char *FILEMODE_REPR[2] = {"", "[RO]"};
 
 int RUNNING = 1;
 
@@ -425,6 +425,7 @@ uint16_t viewport_height_clamp(const ViewPort *vp, const struct winsize *ws, uin
 
 void view_clear(struct View *v) {
     v->line_off = 0;
+    v->first_line_char_off = 0;
     v->view_cursor.off_x = 0;
     v->view_cursor.off_y = 0;
     for(size_t i = 0; i < v->buff->lines.len; i++) {
@@ -527,10 +528,14 @@ void view_set_cursor(struct View *v, size_t x, size_t y) {
     v->view_cursor.off_y = y < v->buff->lines.len ? y : v->buff->lines.len-1;
     if(v->view_cursor.off_y < v->line_off) {
         v->line_off = v->view_cursor.off_y;
+        v->first_line_char_off = 0;
     }
     struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
 
     v->view_cursor.off_x = x < str_len(&l->text) ? x : str_len(&l->text);
+    if(v->view_cursor.off_y == v->line_off && v->first_line_char_off > v->view_cursor.off_x) {
+        v->first_line_char_off = 0;
+    }
 }
 
 utf32 view_get_cursor_char(const struct View *v) {
@@ -903,35 +908,40 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
     uint16_t height = vp->height;
 
     // check if the cursor is beyond the end of the screen
-    size_t first_line_char_off = v->first_line_char_off;
-    uint16_t leading_height = 0;
     {
+        uint16_t leading_height = 0;
+        size_t first_line_char_off = 0;
         ssize_t line_off = v->view_cursor.off_y;
-        while(line_off >= (ssize_t)v->line_off && leading_height < height-1) {
+        while(line_off >= (ssize_t)v->line_off && leading_height <= height) {
             struct Line l = *buffer_line_get(v->buff, line_off);
             if(line_off == v->view_cursor.off_y) {
                 l = line_head(&l, v->view_cursor.off_x+1);
-            } else if(line_off == v->line_off) {
-                l = line_head(&l, v->first_line_char_off);
             }
 
             if(l.render_width > width) {
-                leading_height += (l.render_width % width != 0);
                 leading_height += l.render_width / width;
-                if(leading_height > height) {
-                    size_t diff = leading_height - height;
-                    size_t col_off = width * diff;
-                    first_line_char_off += take_cols(&l.text, &col_off, CONFIG.tab_width);
-                }
+                leading_height += (l.render_width % width != 0);
             } else {
                 leading_height += 1;
+            }
+
+            if(leading_height > height) {
+                size_t diff = leading_height - height;
+                size_t col_off = width * diff;
+                first_line_char_off = take_cols(&l.text, &col_off, CONFIG.tab_width);
+                if(first_line_char_off >= str_len(&l.text)) {
+                    first_line_char_off = 0;
+                    line_off++;
+                }
+                break;
             }
             line_off--;
         }
         if(line_off < 0) line_off = 0;
         if(line_off > v->line_off) {
+            v->first_line_char_off = first_line_char_off;
             v->line_off = line_off;
-        } else {
+        } else if(first_line_char_off > v->first_line_char_off) {
             v->first_line_char_off = first_line_char_off;
         }
     }
@@ -946,8 +956,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
         if(!ptr) break;
         struct Line l = *ptr;
 
-        if(first_line_char_off && line_idx == 0) {
-            l = line_tail(&l, first_line_char_off);
+        if(v->first_line_char_off && line_idx == 0) {
+            l = line_tail(&l, v->first_line_char_off);
         }
         // TODO(louis) highlight
         set_cursor_pos(vp->off_x, vp->off_y+text_height);
@@ -971,7 +981,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
         if(write_escaped(&v->style, &l, 0, idx) == -1) assert(0);
 
         if(ac && line_idx + v->line_off == v->view_cursor.off_y) {
-            size_t line_width = render_width(&l.text, v->view_cursor.off_x);
+            size_t line_width = render_width(&l.text, v->view_cursor.off_x - v->first_line_char_off);
             ac->row = vp->off_y
                 + text_height
                 + line_width / width;
@@ -1699,6 +1709,7 @@ int normal_handle_key(struct KeyEvent *e) {
                     }
                     */
                     v->line_off -= 1;
+                    v->first_line_char_off = 0;
                 }
             } break;
             case KC_ARRLEFT:
@@ -2133,12 +2144,13 @@ int active_line_render(struct winsize *ws) {
     style_fmt(
             &active_line_style,
             STDOUT_FILENO,
-            "[%s] (%ld, %ld) %ld/%ld %s",
+            "[%s] (%ld, %ld) %ld/%ld %ld %s",
             mode_current().mode_str,
             v->view_cursor.off_x + 1,
             v->view_cursor.off_y + 1,
             v->line_off + 1,
             v->buff->lines.len,
+            v->first_line_char_off,
             FILEMODE_REPR[v->buff->fm]
             );
 

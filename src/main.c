@@ -119,6 +119,7 @@ int main(int argc, const char **argv) {
     for(int i = 1; i < argc; i++) {
         struct Buffer *buff = calloc(1, sizeof(struct Buffer));
         if(!buffer_init_from_path(buff, argv[i], FM_RW)) {}
+        // try to open the file as readonly
         else if(errno == EACCES && !buffer_init_from_path(buff, argv[i], FM_RO)) {}
         else {
             editor_teardown();

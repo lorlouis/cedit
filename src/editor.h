@@ -88,7 +88,6 @@ extern int RUNNING;
 
 extern struct View MESSAGE;
 
-
 enum FileMode {
     FM_RW = 0,
     FM_RO,
