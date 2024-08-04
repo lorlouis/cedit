@@ -752,7 +752,14 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             {}
         );
 
-        if(view_write_escaped(&v->style, v, line_idx + v->line_off, 0, idx, &highlight, &vs) < 0) assert(0);
+        if(view_write_escaped(
+                    &v->style,
+                    v,
+                    line_idx + v->line_off,
+                    line_idx == 0 ? v->first_line_char_off : 0,
+                    idx,
+                    &highlight,
+                    &vs) < 0) assert(0);
 
         if(ac && line_idx + v->line_off == v->view_cursor.off_y) {
             size_t line_cursor_pos = v->view_cursor.off_x;
@@ -773,7 +780,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
         }
 
-        size_t line_char_off = idx;
+        size_t line_char_off = idx + (line_idx == 0 ? v->first_line_char_off : 0);
         l = line_tail(&l, idx);
         text_height += 1;
         // print the wraparound lines

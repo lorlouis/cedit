@@ -136,7 +136,7 @@ static void re_state_free(struct ReState *re_state) {
 }
 
 // DO NOT USE DIRECTLY, USE `buffer_rc_dec`
-void buffer_cleanup(struct Buffer *buff) {
+static void buffer_cleanup(struct Buffer *buff) {
     vec_cleanup(&buff->lines);
     switch(buff->in.ty) {
         case INPUT_SCRATCH:
