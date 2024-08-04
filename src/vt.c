@@ -1,5 +1,6 @@
 #include "vt.h"
 
+#include <assert.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -318,8 +319,21 @@ ssize_t take_cols_rev(const Str *restrict line, size_t *nb_cols, int tab_width) 
     }
 
     *nb_cols = sum;
+    // clamp
+    if(off == SIZE_MAX) return 0;
     return off;
 }
+
+size_t render_width(Str *s, size_t len) {
+    size_t width = 0;
+    for(size_t i = 0; i < len; i++) {
+        utf32 c = 0;
+        assert(!str_get_char(s, i, &c));
+        width += utf32_width(c);
+    }
+    return width;
+}
+
 
 #ifdef TESTING
 

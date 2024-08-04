@@ -250,6 +250,7 @@ TEST_DEF(str_operations)
     ASSERT(!strcmp(s.v.buf, "this is atest"));
     str_push(&s, STR_SIZE(" wowo"));
     ASSERT(!strcmp(s.v.buf, "this is atest wowo"));
+    str_free(&s);
 TEST_ENDDEF
 
 TEST_DEF(str_utf8_fuckery)
@@ -262,6 +263,7 @@ TEST_DEF(str_utf8_fuckery)
     utf32 c = 0;
     ASSERT(str_get_char(&s, 13, &c) == 0);
     ASSERT(c == 0x7b97);
+    str_free(&s);
 TEST_ENDDEF
 
 TEST_DEF(test_code_point_to_utf8)

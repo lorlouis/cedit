@@ -138,4 +138,7 @@ ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width);
 //  -1 on err
 ssize_t take_cols_rev(const Str *restrict line, size_t *nb_cols, int tab_width);
 
+/// len in character idx
+size_t render_width(Str *s, size_t len);
+
 #endif

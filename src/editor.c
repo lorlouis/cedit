@@ -1,10 +1,12 @@
 #include "editor.h"
+#include "buffer.h"
 #include "vt.h"
 #include "highlight.h"
 #include "xalloc.h"
 #include "str.h"
 #include "commands.h"
 #include "config.h"
+#include "line.h"
 #include "exec.h"
 
 #include <regex.h>
@@ -24,99 +26,12 @@ const char *FILEMODE_REPR[2] = {"", "[RO]"};
 
 int RUNNING = 1;
 
-struct ViewSelection {
-    ViewCursor start;
-    ViewCursor end;
-};
-
 struct View MESSAGE = {
     .buff = 0,
     .options = {
         .no_line_num = 0,
     }
 };
-
-/// len in character idx
-size_t render_width(Str *s, size_t len) {
-    size_t width = 0;
-    for(size_t i = 0; i < len; i++) {
-        utf32 c = 0;
-        assert(!str_get_char(s, i, &c));
-        width += utf32_width(c);
-    }
-    return width;
-}
-
-struct Line line_new(void) {
-    struct Line l = {0};
-    l.text = str_new();
-    l.style_ids = VEC_NEW(uint8_t, 0);
-    return l;
-}
-
-struct Line line_from_cstr(char *s) {
-    Str str = str_from_cstr(s);
-    struct Line line = line_new();
-    line.render_width = render_width(&str, str_len(&str));
-    line.text = str;
-    return line;
-}
-
-void line_free(struct Line *l) {
-    str_free(&l->text);
-}
-
-int line_insert_at(struct Line *l, size_t idx, const char *s, size_t len) {
-    int ret = str_insert_at(&l->text, idx, s, len);
-    l->render_width = render_width(&l->text, str_len(&l->text));
-    return ret;
-}
-
-void line_clear(struct Line *l) {
-    l->render_width = 0;
-    str_clear(&l->text);
-}
-
-void line_trunc(struct Line *l, size_t idx) {
-    Str tail = str_tail(&l->text, idx);
-    size_t trunked_width = render_width(&tail, str_len(&tail));
-    str_trunc(&l->text, idx);
-    l->render_width -= trunked_width;
-}
-
-// Returns the borrowed head of l
-struct Line line_head(struct Line *l, size_t idx) {
-    Str head = str_head(&l->text, idx);
-    size_t head_width = render_width(&head, str_len(&head));
-    return (struct Line) {
-        .text = head,
-        .style_ids = l->style_ids,
-        .render_width = head_width,
-    };
-}
-
-// Returns the borrowed tail of l
-struct Line line_tail(struct Line *l, size_t idx) {
-    Str tail = str_tail(&l->text, idx);
-    size_t tail_width = render_width(&tail, str_len(&tail));
-    return (struct Line) {
-        .text = tail,
-        .style_ids = l->style_ids,
-        .render_width = tail_width,
-    };
-}
-
-int line_remove(struct Line *l, size_t start, size_t end) {
-    int ret = str_remove(&l->text, start, end);
-    l->render_width = render_width(&l->text, str_len(&l->text));
-    return ret;
-}
-
-int line_append(struct Line *l, const char *s, size_t len) {
-    int ret = str_push(&l->text, s, len);
-    l->render_width = render_width(&l->text, str_len(&l->text));
-    return ret;
-}
 
 void message_clear(void) {
     view_clear(&MESSAGE);
@@ -185,149 +100,7 @@ FILE* filemode_open(
     return 0;
 }
 
-// Returns -1 on error and sets errno
-int buffer_dump(
-        struct Buffer *buff,
-        char *path) {
 
-    if(buff->fm == FM_RO) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    FILE *f = fopen(path, "w");
-    if(!f) {
-        return -1;
-    }
-
-    for(size_t i = 0; i < buff->lines.len; i++) {
-        struct Line *line = buffer_line_get(buff, i);
-        int ret = fprintf(f, "%.*s\n", (int)str_cstr_len(&line->text), str_as_cstr(&line->text));
-        if(ret < 0) {
-            errno = ferror(f);
-            fclose(f);
-            return -1;
-        }
-    }
-
-    fclose(f);
-    buff->dirty = 0;
-    return 0;
-}
-
-struct Buffer buffer_new(void) {
-    struct Buffer buff = {0};
-    buff.lines = VEC_NEW(struct Line, (void(*)(void*))line_free);
-    return buff;
-}
-
-// Returns -1 on error and sets errno
-int buffer_init_from_path(
-        struct Buffer *buff,
-        const char *path,
-        enum FileMode fm) {
-
-    errno = 0;
-    FILE *f = filemode_open(fm, path);
-    // there was an error
-    if(!f && errno) return -1;
-
-    *buff = buffer_new();
-
-    // the file exists
-    if(f) {
-        char *line=0;
-        size_t cap=0;
-        ssize_t len=0;
-        errno = 0;
-        while((len=getline(&line, &cap, f)) > 0) {
-
-            if(line[len-1] == '\n') {
-                line[len-1] = '\0';
-                len-=1;
-            }
-
-            struct Line l = line_from_cstr(line);
-            vec_push(&buff->lines, &l);
-        }
-        free(line);
-
-        if(len == -1 && ferror(f)) {
-            errno = ferror(f);
-            goto err;
-        }
-        fclose(f);
-    }
-
-    buff->in.ty = INPUT_FILE;
-    buff->in.u.file.fm = fm;
-    buff->in.u.file.path = str_from_cstr(path);
-
-    buff->rc = 0;
-    buff->fm = fm;
-
-    return 0;
-
-    err:
-        vec_cleanup(&buff->lines);
-        fclose(f);
-        return -1;
-}
-
-int buffer_num_width(struct Buffer *buff) {
-    int num_width = ceil(log10((double)buff->lines.len)) + 1;
-    if(num_width < 2) num_width = 2;
-    return num_width;
-}
-
-struct Line *buffer_line_get(struct Buffer *buff, size_t idx) {
-    buff->lines.type_size = sizeof(struct Line);
-    if(idx == buff->lines.len) {
-        struct Line new_line = line_new();
-        vec_push(&buff->lines, &new_line);
-    }
-    return VEC_GET(struct Line, &buff->lines, idx);
-}
-
-void buffer_line_remove(struct Buffer *buff, size_t idx) {
-    vec_remove(&buff->lines, idx);
-}
-
-int buffer_line_insert(struct Buffer *buff, size_t idx, struct Line line) {
-    buff->lines.type_size = sizeof(struct Line);
-    return vec_insert(&buff->lines, idx, &line);
-}
-
-// DO NOT CALL DIRECTLY, call `re_state_rc_dec`
-static void re_state_free(struct ReState *re_state) {
-    if(re_state) {
-        if(re_state->regex) {
-            regfree(re_state->regex);
-            xfree(re_state->regex);
-            re_state->regex = 0;
-        }
-        vec_cleanup(&re_state->matches);
-        if(re_state->error_str) {
-            xfree(re_state->error_str);
-            re_state->error_str = 0;
-        }
-    }
-}
-
-
-// DO NOT USE DIRECTLY, USE `buffer_rc_dec`
-void buffer_cleanup(struct Buffer *buff) {
-    vec_cleanup(&buff->lines);
-    switch(buff->in.ty) {
-        case INPUT_SCRATCH:
-            break;
-        case INPUT_FILE:
-            str_free(&buff->in.u.file.path);
-            break;
-    }
-    re_state_free(&buff->re_state);
-    memset(buff, 0, sizeof(struct Buffer));
-}
 
 // if fd is -1, nothing will be printed
 // Returns the width (in columns) of the character
@@ -394,6 +167,47 @@ int write_escaped(Style *base_style, const struct Line *line, size_t off, size_t
     }
     return count;
 }
+
+static int view_write_escaped(
+        Style *base_style,
+        struct View *v,
+        size_t line_idx,
+        size_t off,
+        size_t len,
+        Style *highlight,
+        struct ViewSelection *vs) {
+
+    if(!vs) return write_escaped(base_style, buffer_line_get(v->buff, line_idx), off, len);
+
+    int count = 0;
+    int ret;
+    struct Line *line = buffer_line_get(v->buff, line_idx);
+    for(size_t i = off; i < len+off; i++) {
+        utf32 c = 0;
+        assert(str_get_char(&line->text, i, &c) != -1);
+
+        // could be wide null (unlikely but still)
+        assert(c && "null in middle of the line");
+        assert(c != L'\n' && "new line in middle of the line");
+
+        Style s = *base_style;
+
+        if(i < line->style_ids.len) {
+            Style *cur = style_find_by_id(*VEC_GET(char, &line->style_ids, i));
+            if(cur) {
+                s = style_merge(s, *cur);
+            }
+        }
+
+        if(view_selection_position_selected(vs, line_idx, i)) s = style_merge(s, *highlight);
+
+        ret = write_char_escaped(&s, c, STDOUT_FILENO);
+        if(ret == -1) return ret;
+        count += ret;
+    }
+    return count;
+}
+
 
 uint16_t viewport_viewable_width(const ViewPort *vp, const struct winsize *ws) {
     uint16_t real_width = vp->width;
@@ -587,99 +401,43 @@ struct ViewSelection view_selection_from_cursors(struct ViewCursor a, struct Vie
     };
 }
 
-_Bool view_selection_position_selected(const struct ViewSelection *vs, size_t off_x, size_t off_y) {
+int view_selection_position_selected(const struct ViewSelection *vs, size_t line_idx, size_t char_off) {
 
-    _Bool position_selected =
-        ((vs->start.off_y == off_y
-          && vs->start.off_x <= off_x)
-         || vs->start.off_y < off_y)
-        &&
-        ((vs->end.off_y == off_y
-          && vs->end.off_x >= off_x)
-         || vs->end.off_y > off_y)
-        ;
+    int line_fully_selected = vs->start.off_y < line_idx && vs->end.off_y > line_idx;
 
-    return position_selected;
-}
+    int tail_selected = vs->start.off_y == line_idx
+        && char_off >= vs->start.off_x
+        && vs->end.off_y != line_idx;
 
-_Bool view_selection_line_tail_partially_selected(const struct ViewSelection *vs, size_t off_x, size_t off_y) {
-    _Bool partially_selected =
-        (vs->start.off_y == off_y
-         && vs->start.off_x <= off_x)
-        ||
-        (vs->end.off_y == off_y
-         && vs->end.off_x >= off_x)
-        ||
-        (vs->start.off_y <= off_y
-         && vs->end.off_y >= off_y)
-        ;
+    int head_selected = vs->end.off_y == line_idx 
+        && char_off <= vs->end.off_x
+        && vs->start.off_y != line_idx;
 
-    return partially_selected;
-}
+    int middle_selected = vs->start.off_y == line_idx
+        && vs->end.off_y == line_idx
+        && vs->start.off_x <= char_off
+        && vs->end.off_x >= char_off;
 
-_Bool view_selection_line_fully_selected(const struct ViewSelection *vs, size_t off_y) {
-    _Bool fully_selected =
-        vs->start.off_y < off_y
-        && vs->end.off_y > off_y
-        ;
-    return fully_selected;
+    return line_fully_selected || head_selected || middle_selected || tail_selected;
 }
 
 Str view_selection_get_text(const struct ViewSelection *vs, const struct View *v) {
     Str selected = str_new();
 
-    size_t line_idx = vs->start.off_y;
+    for(size_t line_idx = vs->start.off_y;
+            line_idx <= vs->end.off_y;
+            line_idx++) {
 
-    int selected_lines_count = vs->end.off_y - vs->start.off_y + 1;
+        struct Line *l = buffer_line_get(v->buff, line_idx);
+        for(size_t char_off = vs->start.off_x;
+                char_off < str_len(&l->text);
+                char_off++) {
+            if(view_selection_position_selected(vs, line_idx, char_off)) {
+                size_t char_idx = str_get_char_byte_idx(&l->text, char_off);
+                size_t char_len = str_get_char_byte_idx(&l->text, char_off+1) - char_idx;
 
-    struct Line *l = buffer_line_get(v->buff, line_idx);
-    if(str_is_empty(&l->text)) {
-        str_push(&selected, "\n", strlen("\n"));
-    }
-    else if(view_selection_line_fully_selected(vs, line_idx)) {
-        str_push(&selected, str_as_cstr(&l->text), str_cstr_len(&l->text));
-        str_push(&selected, "\n", strlen("\n"));
-    }
-    else if(view_selection_line_tail_partially_selected(vs, 0, line_idx)) {
-        Str substr = str_tail(&l->text, vs->start.off_x);
-        _Bool only_one_line = vs->end.off_y == vs->start.off_y;
-        // if the selection is on a single line, only select up to
-        // end cursor
-        if(only_one_line) {
-            size_t substr_len = vs->end.off_x - vs->start.off_x;
-            if(substr_len == str_len(&substr)) {
-                str_push(&selected, str_as_cstr(&substr), str_cstr_len(&substr));
-                str_push(&selected, "\n", strlen("\n"));
-            } else {
-                substr = str_head(&substr, substr_len+2);
-                str_push(&selected, str_as_cstr(&substr), str_cstr_len(&substr));
+                str_push(&selected, str_as_cstr(&l->text) + char_idx, char_len);
             }
-        } else {
-            str_push(&selected, str_as_cstr(&substr), str_cstr_len(&substr));
-            str_push(&selected, "\n", strlen("\n"));
-        }
-    }
-
-    for(int i = 1; i < selected_lines_count; i++) {
-        l = buffer_line_get(v->buff, line_idx+i);
-        if(str_is_empty(&l->text)) {
-            str_push(&selected, "\n", strlen("\n"));
-        }
-        else if(view_selection_line_fully_selected(vs, line_idx+i)) {
-            str_push(&selected, str_as_cstr(&l->text), str_cstr_len(&l->text));
-            str_push(&selected, "\n", strlen("\n"));
-        } else if(view_selection_line_tail_partially_selected(vs, 0, line_idx + i)) {
-
-            size_t substr_len = vs->end.off_x;
-            if(substr_len == str_len(&l->text)) {
-                str_push(&selected, str_as_cstr(&l->text), str_cstr_len(&l->text));
-                str_push(&selected, "\n", strlen("\n"));
-            } else {
-                Str head = str_head(&l->text, substr_len+2);
-                str_push(&selected, str_as_cstr(&head), str_cstr_len(&head));
-            }
-        } else {
-            assert(0 && "this is weird");
         }
     }
 
@@ -899,6 +657,8 @@ uint16_t view_inner_width(
 }
 
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
+    // TODO(louis) use winsize to cutoff text that is partially out of the screen
+
     Style base_style = v->style;
     Style line_num_style = style_fg(base_style, colour_vt(VT_GRA));
     Style highlight = style_bg(base_style, colour_vt(VT_BLU));
@@ -914,7 +674,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
         ssize_t line_off = v->view_cursor.off_y;
         while(line_off >= (ssize_t)v->line_off && leading_height <= height) {
             struct Line l = *buffer_line_get(v->buff, line_off);
-            if(line_off == v->view_cursor.off_y) {
+            if(line_off == (ssize_t)v->view_cursor.off_y) {
                 l = line_head(&l, v->view_cursor.off_x+1);
             }
 
@@ -938,7 +698,7 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             line_off--;
         }
         if(line_off < 0) line_off = 0;
-        if(line_off > v->line_off) {
+        if(line_off > (ssize_t)v->line_off) {
             v->first_line_char_off = first_line_char_off;
             v->line_off = line_off;
         } else if(first_line_char_off > v->first_line_char_off) {
@@ -965,7 +725,6 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
         set_cursor_pos(vp->off_x, vp->off_y+text_height);
         // print line number
         if(view_num_width(v) > 0) {
-
             style_fmt(
                     &line_num_style,
                     STDOUT_FILENO,
@@ -981,7 +740,19 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
                 &target_width,
                 CONFIG.tab_width);
         if(idx == -1) return -1;
-        if(write_escaped(&v->style, &l, 0, idx) == -1) assert(0);
+
+        struct ViewSelection vs = view_selection_empty();
+
+        match_maybe(&v->selection_end,
+            end, {
+                vs = view_selection_from_cursors(
+                    v->view_cursor,
+                    *end);
+                },
+            {}
+        );
+
+        if(view_write_escaped(&v->style, v, line_idx + v->line_off, 0, idx, &highlight, &vs) < 0) assert(0);
 
         if(ac && line_idx + v->line_off == v->view_cursor.off_y) {
             size_t line_cursor_pos = v->view_cursor.off_x;
@@ -1002,8 +773,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
             style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
         }
 
+        size_t line_char_off = idx;
         l = line_tail(&l, idx);
-        line_idx += 1;
         text_height += 1;
         // print the wraparound lines
         while(str_len(&l.text) && text_height < height) {
@@ -1024,16 +795,18 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
                     &target_width,
                     CONFIG.tab_width);
             if(idx == SIZE_MAX) assert(0);
-            if(write_escaped(&v->style, &l, 0, idx) == -1) return -1;
+
+            if(view_write_escaped(&v->style, v, line_idx + v->line_off, line_char_off, idx, &highlight, &vs) < 0) assert(0);
 
             size_t fill = width - target_width;
             if(fill) {
                 style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
             }
-
+            line_char_off += idx;
             l = line_tail(&l, idx);
             text_height += 1;
         }
+        line_idx += 1;
     }
 
     // render empty lines
@@ -1051,21 +824,6 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
         style_fmt(&base_style, STDOUT_FILENO, "%*c", vp->width, ' ');
         text_height += 1;
     }
-    return 0;
-}
-
-struct Buffer* buffer_rc_inc(struct Buffer *buff) {
-    buff->rc += 1;
-    return buff;
-}
-
-int buffer_rc_dec(struct Buffer *buff) {
-    if(!buff->rc) {
-        buffer_cleanup(buff);
-        xfree(buff);
-        return 1;
-    }
-    buff->rc -= 1;
     return 0;
 }
 
@@ -1413,9 +1171,11 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
 
             if(!str_is_empty(&tab_get(i)->name)) {
                 size_t cols = 10;
-                int len = take_cols(&tab_get(i)->name, &cols, CONFIG.tab_width);
-                assert(len >= 0 && "error when computing len");
-                dprintf(STDOUT_FILENO, "[%.*s]", len, str_as_cstr(&tab_get(i)->name));
+                int idx = take_cols_rev(&tab_get(i)->name, &cols, CONFIG.tab_width);
+                assert(idx >= 0 && "error when computing idx");
+                Str name_str = tab_get(i)->name;
+                const char *name = str_as_cstr(&name_str) + idx;
+                dprintf(STDOUT_FILENO, "[%s]", name);
                 sum+=cols+2;
             } else {
                 dprintf(STDOUT_FILENO, "[%.4ld]", i);
@@ -1850,7 +1610,11 @@ int command_handle_key(struct KeyEvent *e) {
         }
     }
     switch(e->key) {
+        case KC_ARRLEFT:
+            break;
         default: {
+            // try not to print garbage to the screen
+            if(!iswprint(e->key)) break;
             char bytes[4] = {0};
             int len = utf32_to_utf8(e->key, bytes, 4);
             assert(len >= 1);
