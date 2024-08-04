@@ -1974,7 +1974,7 @@ void editor_quit(int no_confirm) {
     struct Window *active_window = tab_window_active(active_tab);
     struct View *v = tab_active_view(tab_active());
 
-    if(!no_confirm && v->buff->rc == 0 && v->buff->dirty) {
+    if(!no_confirm && v->buff->rc == 0 && v->buff->dirty && v->buff->in.ty != INPUT_SCRATCH) {
         message_print("E: modifications to this buffer would be lost");
         return;
     }
@@ -2146,7 +2146,7 @@ void editor_open(const char *path, enum FileMode fm, int no_confirm) {
     struct Window *active_window = tab_window_active(active_tab);
     struct View *active_view = window_view_active(active_window);
 
-    if(!no_confirm && active_view->buff->rc == 0 && active_view->buff->dirty) {
+    if(!no_confirm && active_view->buff->rc == 0 && active_view->buff->dirty && active_view->buff->in.ty != INPUT_SCRATCH) {
         message_print("E: modifications to this buffer would be lost");
         return;
     }

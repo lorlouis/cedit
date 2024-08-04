@@ -17,7 +17,8 @@ struct Input {
         INPUT_FILE,
     } ty;
     union {
-        int scratch:1;
+        // zero sized as to not waste space
+        int scratch[0];
         struct {
             Str path;
             enum FileMode fm;
