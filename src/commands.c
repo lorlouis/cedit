@@ -16,7 +16,8 @@ int exec_command(char *command) {
 
         Str out = str_new();
         // todo handle ctrl-c so that it's possible to kill
-        // commands that hang
+        // commands that hang, maybe some async here? /shudders/
+        // probably should poll
         spawn_handle_wait_collect_output(&handle, &out);
         spawn_handle_free(&handle);
 
@@ -24,10 +25,16 @@ int exec_command(char *command) {
 
         struct Buffer *buff = xcalloc(1, sizeof(struct Buffer));
         *buff = buffer_new();
+        // not backed by anything
+        buff->in.ty = INPUT_SCRATCH;
+
         struct View view = view_new(buff);
+        // no need for line numbers
+        view.options.no_line_num = 1;
+
         struct Window *man_win = xcalloc(1, sizeof(struct Window));
         *man_win = window_new();
-        
+
         view_write(&view, str_as_cstr(&out), str_cstr_len(&out));
         // move cursor back to the start of the file
         view_set_cursor(&view, 0, 0);
@@ -35,7 +42,7 @@ int exec_command(char *command) {
         str_free(&out);
 
         window_view_push(man_win, view);
-        
+
         window_push(win, man_win, SD_Horizontal);
         // move focus to new window
         tab_active()->active_window += 1;

@@ -55,6 +55,7 @@ int str_push(Str *s, const char *o, size_t len);
 
 void str_clear(Str *s);
 
+// truncates s in place
 void str_trunc(Str *s, size_t new_len);
 
 size_t str_len(const Str *s);

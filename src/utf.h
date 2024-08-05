@@ -17,6 +17,13 @@ int utf8_byte_count(utf8 c);
 
 int utf32_len_utf8(utf32 c);
 
+// Returns
+//  index of the start of the character
+//  -1 on error (no start of index or idx > len)
+//
+//  Assumes that the UTF-8 sequence is valid
+size_t utf8_find_start(const utf8 *s, size_t len, size_t idx);
+
 int utf8_to_utf32(const utf8 *s, size_t len, utf32 *out);
 
 int utf32_to_utf8(utf32 c, utf8 *buff, size_t size);

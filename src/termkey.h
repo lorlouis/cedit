@@ -6,7 +6,7 @@
 
 enum KeyCode {
     KC_DEL = 127,
-    KC_HOME = 256,
+    KC_HOME,
     KC_INS,
     KC_END,
     KC_PGUP,
@@ -74,8 +74,6 @@ int readkey(int fd, struct KeyEvent *restrict e);
 // >= 0 on success (number of bytes written excluding the null terminator)
 // -1 if buffer is too small
 int keyevent_fmt(struct KeyEvent *e, char *buff, size_t len);
-
-wchar_t keyevent_to_wchar(struct KeyEvent *e);
 
 int check_utf8_start(char c);
 

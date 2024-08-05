@@ -1,5 +1,6 @@
 #include "vt.h"
 
+#include <assert.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -264,6 +265,7 @@ size_t count_cols(const Str *line, int tab_width) {
     return sum;
 }
 
+// Returns the character index
 ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width) {
     size_t sum = 0;
     size_t off = 0;
@@ -290,6 +292,48 @@ ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width) {
     *nb_cols = sum;
     return off;
 }
+
+// Returns the char index at which line's tail is smaller or equal to the target
+// number of columns.
+ssize_t take_cols_rev(const Str *restrict line, size_t *nb_cols, int tab_width) {
+    size_t sum = 0;
+    size_t off = str_len(line)-1;
+
+    while(off != SIZE_MAX){
+        utf32 c = 0;
+        if(str_get_char(line, off, &c)) return -1;
+
+        wint_t wc = utf32_to_wint(c);
+        if(wc == 0 || wc == L'\n') break;
+
+        int width = tab_width;
+        if(c != L'\t') width = utf32_width(c);
+
+        if(sum + width > *nb_cols) {
+            *nb_cols = sum;
+            return off;
+        }
+
+        sum += width;
+        off -= 1;
+    }
+
+    *nb_cols = sum;
+    // clamp
+    if(off == SIZE_MAX) return 0;
+    return off;
+}
+
+size_t render_width(Str *s, size_t len) {
+    size_t width = 0;
+    for(size_t i = 0; i < len; i++) {
+        utf32 c = 0;
+        assert(!str_get_char(s, i, &c));
+        width += utf32_width(c);
+    }
+    return width;
+}
+
 
 #ifdef TESTING
 

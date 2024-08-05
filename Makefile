@@ -1,5 +1,5 @@
 ENTRYPOINT	= main.c
-SOURCE	= vt.c editor.c termkey.c xalloc.c str.c utf.c commands.c config.c highlight.c exec.c
+SOURCE	= vt.c editor.c termkey.c xalloc.c str.c utf.c commands.c config.c highlight.c exec.c line.c buffer.c
 HEADER	=
 SRC_DIR = src
 BUILD_DIR = build
@@ -7,9 +7,9 @@ TEST_DIR = tests
 OUT	= a.out
 CC	?= gcc
 EXTRAFLAGS ?=
-FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR)
+FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fsanitize=address
 TEST_FLAGS = $(FLAGS) -DTESTING=1 -Itests
-LFLAGS	= -lm
+LFLAGS	= -lm -fsanitize=address
 TEST_LFLAGS = $(LFLAGS)
 
 ENTRYPOINT_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(ENTRYPOINT))

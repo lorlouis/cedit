@@ -502,10 +502,9 @@ int keyevent_fmt(struct KeyEvent *e, char *buff, size_t len) {
                 }
                 off += 1;
             } else {
-                size_t size = snprintf(NULL, 0, "0x%.4x", e->key);
+                size_t size = snprintf(NULL, 0, "0x%x", e->key);
                 if(buff) {
-                    if(off + size >= len) return -1;
-                    sprintf(buff+off, "0x%.4x", e->key);
+                    if(off-1 + size >= len) return -1;
                 }
                 off += size;
             }
@@ -586,10 +585,12 @@ TEST_DEF(keyevent_fmt)
         .key = 23,
     };
 
+    // pass in a buffer that's too small
     len = keyevent_fmt(&e, buf, BUF_LEN);
     ASSERT(len < 0);
-    printf("%s\n", buf);
-
+    // pass in a null buffer and get the expected size (minus null terminator)
+    len = keyevent_fmt(&e, 0, BUF_LEN);
+    ASSERT(len == 11);
 
 TEST_ENDDEF
 

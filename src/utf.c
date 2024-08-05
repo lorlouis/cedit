@@ -39,6 +39,15 @@ int utf8_byte_count(utf8 c) {
     return 1;
 }
 
+size_t utf8_find_start(const utf8 *s, size_t len, size_t idx) {
+    if(idx >= len) return -1;
+    while(idx > 0) {
+        if(utf8_is_follow(s[idx])) idx--;
+    }
+    if(utf8_is_follow(s[idx])) return -1;
+    return idx;
+}
+
 int utf32_len_utf8(utf32 c) {
     switch(c) {
         case 0x000000 ... 0x00007f:
@@ -241,6 +250,7 @@ TEST_DEF(str_operations)
     ASSERT(!strcmp(s.v.buf, "this is atest"));
     str_push(&s, STR_SIZE(" wowo"));
     ASSERT(!strcmp(s.v.buf, "this is atest wowo"));
+    str_free(&s);
 TEST_ENDDEF
 
 TEST_DEF(str_utf8_fuckery)
@@ -253,6 +263,7 @@ TEST_DEF(str_utf8_fuckery)
     utf32 c = 0;
     ASSERT(str_get_char(&s, 13, &c) == 0);
     ASSERT(c == 0x7b97);
+    str_free(&s);
 TEST_ENDDEF
 
 TEST_DEF(test_code_point_to_utf8)
