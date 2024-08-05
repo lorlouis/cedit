@@ -101,7 +101,6 @@ FILE* filemode_open(
 }
 
 
-
 // if fd is -1, nothing will be printed
 // Returns the width (in columns) of the character
 // -1 on error
@@ -429,7 +428,7 @@ Str view_selection_get_text(const struct ViewSelection *vs, const struct View *v
             line_idx++) {
 
         struct Line *l = buffer_line_get(v->buff, line_idx);
-        for(size_t char_off = vs->start.off_x;
+        for(size_t char_off = 0;
                 char_off < str_len(&l->text);
                 char_off++) {
             if(view_selection_position_selected(vs, line_idx, char_off)) {
@@ -439,6 +438,8 @@ Str view_selection_get_text(const struct ViewSelection *vs, const struct View *v
                 str_push(&selected, str_as_cstr(&l->text) + char_idx, char_len);
             }
         }
+        if(line_idx != vs->end.off_y || (line_idx == vs->end.off_y && vs->end.off_x == str_len(&l->text)))
+            str_push(&selected, "\n", 2);
     }
 
     return selected;
@@ -454,13 +455,15 @@ void view_move_cursor_end(struct View *v) {
 
 void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
     ssize_t new_x;
-    if(off_x == 0) {
-        new_x = v->view_cursor.target_x;
-    } else {
-        new_x = (ssize_t)v->view_cursor.off_x + off_x;
-        v->view_cursor.target_x = new_x;
-    }
+    new_x = (ssize_t)v->view_cursor.off_x + off_x;        
     if(new_x < 0) new_x = 0;
+
+    if(off_x) {
+        v->view_cursor.target_x = new_x;
+    } else if(new_x < (ssize_t)v->view_cursor.target_x) {
+        new_x = v->view_cursor.target_x;
+    }
+
     ssize_t new_y = (ssize_t)v->view_cursor.off_y + off_y;
     if(new_y < 0) new_y = 0;
 
@@ -1508,12 +1511,18 @@ int normal_handle_key(struct KeyEvent *e) {
 int insert_enter(void) {
     char line_cursor[] = CSI"5 q";
     write(STDOUT_FILENO, line_cursor, sizeof(line_cursor)-1);
+    fsync(STDOUT_FILENO);
     return 0;
 }
 
 int insert_leave(void) {
     char block_cursor[] = CSI"1 q";
     write(STDOUT_FILENO, block_cursor, sizeof(block_cursor)-1);
+    fsync(STDOUT_FILENO);
+    // might be run during shutdown
+    if(TABS.len == 0) return 0;
+    struct View *v = tab_active_view(tab_active());
+    view_move_cursor(v, -1, 0);
     return 0;
 }
 

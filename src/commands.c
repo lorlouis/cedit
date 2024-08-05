@@ -17,6 +17,7 @@ int exec_command(char *command) {
         Str out = str_new();
         // todo handle ctrl-c so that it's possible to kill
         // commands that hang, maybe some async here? /shudders/
+        // probably should poll
         spawn_handle_wait_collect_output(&handle, &out);
         spawn_handle_free(&handle);
 
