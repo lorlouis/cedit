@@ -1407,7 +1407,7 @@ int view_move_cursor_word_next(struct View *v) {
 
     int (*func)(utf32) = isword;
     if(iswordpunct(c)) func = iswordpunct;
-    else func = iswspace;
+    else if(iswspace(c)) func = iswspace;
 
     // never break
     do {
