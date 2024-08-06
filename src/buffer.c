@@ -159,6 +159,27 @@ static void re_state_free(struct ReState *re_state) {
     }
 }
 
+void re_state_clear_matches(struct ReState *re_state) {
+    vec_clear(&re_state->matches);
+}
+
+void re_state_reset(struct ReState *re_state) {
+    if(re_state->regex) {
+        regfree(re_state->regex);
+        memset(re_state->regex, 0, sizeof(regex_t));
+        re_state_clear_matches(re_state);
+    } else {
+        re_state->regex = xcalloc(1, sizeof(regex_t));
+        re_state->matches = VEC_NEW(struct ReMatch, 0);
+        re_state_clear_matches(re_state);
+    }
+    if(re_state->error_str) {
+        xfree(re_state->error_str);
+        re_state->error_str = 0;
+    }
+}
+
+
 // DO NOT USE DIRECTLY, USE `buffer_rc_dec`
 static void buffer_cleanup(struct Buffer *buff) {
     vec_cleanup(&buff->lines);

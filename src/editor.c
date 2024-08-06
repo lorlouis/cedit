@@ -225,27 +225,6 @@ void view_clear(struct View *v) {
     v->buff->lines.len = 0;
 }
 
-void re_state_clear_matches(struct ReState *re_state) {
-    vec_clear(&re_state->matches);
-    set_none(&re_state->selected);
-}
-
-void re_state_reset(struct ReState *re_state) {
-    if(re_state->regex) {
-        regfree(re_state->regex);
-        memset(re_state->regex, 0, sizeof(regex_t));
-        re_state_clear_matches(re_state);
-    } else {
-        re_state->regex = xcalloc(1, sizeof(regex_t));
-        re_state->matches = VEC_NEW(struct ReMatch, 0);
-        re_state_clear_matches(re_state);
-    }
-    if(re_state->error_str) {
-        xfree(re_state->error_str);
-        re_state->error_str = 0;
-    }
-}
-
 void view_free(struct View *v) {
     if(v->buff) buffer_rc_dec(v->buff);
 }
@@ -1888,6 +1867,8 @@ int search_handle_key(struct KeyEvent *e) {
             struct Line *line = buffer_line_get(MESSAGE.buff, 0);
             // this only checks the first line
             editor_search(str_as_cstr(&line->text)+1);
+            struct View *active_view = tab_active_view(tab_active());
+            active_view->view_cursor = active_view->buff->re_state.original_cursor;
             cursor_jump_next_search();
         } break;
     }
@@ -2319,52 +2300,48 @@ void editor_init(void) {
 }
 
 void cursor_jump_prev_search(void) {
+    // TODO(louis) binary search
     struct View *active_view = tab_active_view(tab_active());
-    // no matches
     if(!active_view->buff->re_state.matches.len) return;
 
-    size_t idx;
+    struct ReMatch *match = 0;
+    size_t idx = active_view->buff->re_state.matches.len-1;
 
-    match_maybe(&active_view->buff->re_state.selected,
-            selected, {
-                if(*selected == 0) {
-                    *selected = active_view->buff->re_state.matches.len -1;
-                }
-                else {
-                    *selected -= 1;
-                }
-            },
-            {
-                set_some(&active_view->buff->re_state.selected, 0);
-            }
-        );
-    // always set
-    idx = *as_ptr(&active_view->buff->re_state.selected);
+    match = vec_get(&active_view->buff->re_state.matches, idx);
+    while(match->line > active_view->view_cursor.off_y
+            || (match->line == active_view->view_cursor.off_y
+                && match->col >= active_view->view_cursor.off_x)) {
+        if(idx == 0) {
+            match = vec_get(
+                    &active_view->buff->re_state.matches,
+                    active_view->buff->re_state.matches.len-1);
+            break;
+        }
+        idx--;
+        match = vec_get(&active_view->buff->re_state.matches, idx);
+    }
 
-    struct ReMatch *match = vec_get(&active_view->buff->re_state.matches, idx);
-
-    active_view->view_cursor.off_x = match->col;
-    active_view->view_cursor.off_y = match->line;
+    view_set_cursor(active_view, match->col, match->line);
 }
 
 void cursor_jump_next_search(void) {
     struct View *active_view = tab_active_view(tab_active());
     if(!active_view->buff->re_state.matches.len) return;
 
-    size_t idx;
+    struct ReMatch *match = 0;
+    size_t idx = 0;
 
-    match_maybe(&active_view->buff->re_state.selected,
-            selected, {
-                *selected = (*selected + 1) % active_view->buff->re_state.matches.len;
-            },
-            {
-                set_some(&active_view->buff->re_state.selected, 0);
-            }
-        );
-    // always set
-    idx = *as_ptr(&active_view->buff->re_state.selected);
-
-    struct ReMatch *match = vec_get(&active_view->buff->re_state.matches, idx);
+    match = vec_get(&active_view->buff->re_state.matches, idx);
+    while(match->line < active_view->view_cursor.off_y
+            || (match->line == active_view->view_cursor.off_y
+                && match->col <= active_view->view_cursor.off_x)) {
+        if(idx == active_view->buff->re_state.matches.len-1) {
+            match = vec_get(&active_view->buff->re_state.matches, 0);
+            break;
+        }
+        idx = (idx + 1) % active_view->buff->re_state.matches.len;
+        match = vec_get(&active_view->buff->re_state.matches, idx);
+    }
 
     view_set_cursor(active_view, match->col, match->line);
 }
