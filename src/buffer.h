@@ -11,6 +11,8 @@ enum FileMode {
     FM_RO,
 };
 
+FILE* filemode_open(enum FileMode fm, const char *path);
+
 struct Input {
     enum {
         INPUT_SCRATCH,

@@ -6,6 +6,29 @@
 #include "string.h"
 #include <math.h>
 
+FILE* filemode_open(
+        enum FileMode fm,
+        const char *path) {
+
+    switch(fm) {
+        case FM_RW: {
+            // try to open the file
+            FILE *f = fopen(path, "r+");
+            // it's possible that the file does not exist
+            if(!f && errno == ENOENT) {
+                errno = 0;
+                return 0;
+            }
+            return f;
+        } break;
+        case FM_RO:
+            return fopen(path, "r");
+            break;
+    }
+    return 0;
+}
+
+
 struct Buffer buffer_new(void) {
     struct Buffer buff = {0};
     buff.lines = VEC_NEW(struct Line, (void(*)(void*))line_free);
