@@ -11,6 +11,8 @@ enum FileMode {
     FM_RO,
 };
 
+FILE* filemode_open(enum FileMode fm, const char *path);
+
 struct Input {
     enum {
         INPUT_SCRATCH,
@@ -44,9 +46,10 @@ struct ReState {
     regex_t *regex;
     // `Vec` of `ReMatch`
     Vec matches;
-    Maybe(size_t) selected;
     char *error_str;
 };
+
+void re_state_clear_matches(struct ReState *re_state);
 
 void re_state_clear_matches(struct ReState *re_state);
 

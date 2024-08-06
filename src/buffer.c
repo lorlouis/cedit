@@ -6,6 +6,29 @@
 #include "string.h"
 #include <math.h>
 
+FILE* filemode_open(
+        enum FileMode fm,
+        const char *path) {
+
+    switch(fm) {
+        case FM_RW: {
+            // try to open the file
+            FILE *f = fopen(path, "r+");
+            // it's possible that the file does not exist
+            if(!f && errno == ENOENT) {
+                errno = 0;
+                return 0;
+            }
+            return f;
+        } break;
+        case FM_RO:
+            return fopen(path, "r");
+            break;
+    }
+    return 0;
+}
+
+
 struct Buffer buffer_new(void) {
     struct Buffer buff = {0};
     buff.lines = VEC_NEW(struct Line, (void(*)(void*))line_free);
@@ -65,6 +88,7 @@ int buffer_init_from_path(
         return -1;
 }
 
+/// Width of the number line for that given buffer
 int buffer_num_width(struct Buffer *buff) {
     int num_width = ceil(log10((double)buff->lines.len)) + 1;
     if(num_width < 2) num_width = 2;
@@ -134,6 +158,27 @@ static void re_state_free(struct ReState *re_state) {
         }
     }
 }
+
+void re_state_clear_matches(struct ReState *re_state) {
+    vec_clear(&re_state->matches);
+}
+
+void re_state_reset(struct ReState *re_state) {
+    if(re_state->regex) {
+        regfree(re_state->regex);
+        memset(re_state->regex, 0, sizeof(regex_t));
+        re_state_clear_matches(re_state);
+    } else {
+        re_state->regex = xcalloc(1, sizeof(regex_t));
+        re_state->matches = VEC_NEW(struct ReMatch, 0);
+        re_state_clear_matches(re_state);
+    }
+    if(re_state->error_str) {
+        xfree(re_state->error_str);
+        re_state->error_str = 0;
+    }
+}
+
 
 // DO NOT USE DIRECTLY, USE `buffer_rc_dec`
 static void buffer_cleanup(struct Buffer *buff) {

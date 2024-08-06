@@ -78,28 +78,6 @@ int message_print(const char *fmt, ...) {
     return s_size;
 }
 
-FILE* filemode_open(
-        enum FileMode fm,
-        const char *path) {
-
-    switch(fm) {
-        case FM_RW: {
-            // try to open the file
-            FILE *f = fopen(path, "r+");
-            // it's possible that the file does not exist
-            if(!f && errno == ENOENT) {
-                errno = 0;
-                return 0;
-            }
-            return f;
-        } break;
-        case FM_RO:
-            return fopen(path, "r");
-            break;
-    }
-    return 0;
-}
-
 
 // if fd is -1, nothing will be printed
 // Returns the width (in columns) of the character
@@ -245,27 +223,6 @@ void view_clear(struct View *v) {
         line_free(buffer_line_get(v->buff, i));
     }
     v->buff->lines.len = 0;
-}
-
-void re_state_clear_matches(struct ReState *re_state) {
-    vec_clear(&re_state->matches);
-    set_none(&re_state->selected);
-}
-
-void re_state_reset(struct ReState *re_state) {
-    if(re_state->regex) {
-        regfree(re_state->regex);
-        memset(re_state->regex, 0, sizeof(regex_t));
-        re_state_clear_matches(re_state);
-    } else {
-        re_state->regex = xcalloc(1, sizeof(regex_t));
-        re_state->matches = VEC_NEW(struct ReMatch, 0);
-        re_state_clear_matches(re_state);
-    }
-    if(re_state->error_str) {
-        xfree(re_state->error_str);
-        re_state->error_str = 0;
-    }
 }
 
 void view_free(struct View *v) {
@@ -1350,42 +1307,152 @@ int isword(wint_t c) {
     return !iswordpunct(c) && !iswspace(c);
 }
 
+int view_move_cursor_word_start(struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    utf32 c = 0;
+    // I miss closures
+    // TODO(louis) move to it's own function
+    #define WALK_BACK_CURSOR(test) \
+        if(v->view_cursor.off_x == 0) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(test) || v->view_cursor.off_y == 0) break; \
+            view_move_cursor(v, 0, -1); \
+            view_move_cursor_end(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, -1, 0); \
+        }
+    // never break
+    do { WALK_BACK_CURSOR(1); } while(0);
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+
+    int (*func)(utf32) = isword;
+    if(iswordpunct(c)) func = iswordpunct;
+    else if(iswspace(c)) func = iswspace;
+
+    while(!func(c)) {
+        WALK_BACK_CURSOR(!func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    struct ViewCursor last = v->view_cursor;
+    while(func(c)) {
+        last = v->view_cursor;
+        WALK_BACK_CURSOR(func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+    // walk forward one position
+    if(func != iswspace) v->view_cursor = last;
+    return 0;
+}
+
+int view_move_cursor_word_end(struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    utf32 c = 0;
+    // I miss closures
+    #define ADVANCE_CURSOR(test) \
+        if(v->view_cursor.off_x + 1 >= str_len(&l->text)) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(test) || v->view_cursor.off_y + 1 >= v->buff->lines.len) break; \
+            view_move_cursor(v, 0, 1); \
+            view_move_cursor_start(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, 1, 0); \
+        }
+    // never break
+    do { ADVANCE_CURSOR(1); } while(0);
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+
+    int (*func)(utf32) = isword;
+    if(iswordpunct(c)) func = iswordpunct;
+    else if(iswspace(c)) func = iswspace;
+
+    while(!func(c)) {
+        ADVANCE_CURSOR(!func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    struct ViewCursor last = v->view_cursor;
+    while(func(c)) {
+        last = v->view_cursor;
+        ADVANCE_CURSOR(func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+    #undef ADVANCE_CURSOR
+    // walk back one position
+    if(func != iswspace) v->view_cursor = last;
+    return 0;
+}
+
+int view_move_cursor_word_next(struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    utf32 c = 0;
+    // I miss closures
+    #define ADVANCE_CURSOR(test) \
+        if(v->view_cursor.off_x + 1 >= str_len(&l->text)) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(test) || v->view_cursor.off_y + 1 >= v->buff->lines.len) break; \
+            view_move_cursor(v, 0, 1); \
+            view_move_cursor_start(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, 1, 0); \
+        }
+    // only errors out if the line has a length of zero
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c) == -1) c = L'\n';
+
+    int (*func)(utf32) = isword;
+    if(iswordpunct(c)) func = iswordpunct;
+    else if(iswspace(c)) func = iswspace;
+
+    // never break
+    do {
+        if(v->view_cursor.off_x + 1 >= str_len(&l->text)) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(1) || v->view_cursor.off_y + 1 >= v->buff->lines.len) break; \
+            view_move_cursor(v, 0, 1); \
+            view_move_cursor_start(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, 1, 0); \
+        }
+    } while(0);
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+
+    while(func(c)) {
+        ADVANCE_CURSOR(func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    while(iswspace(c)) {
+        ADVANCE_CURSOR(iswspace('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    #undef ADVANCE_CURSOR
+    return 0;
+}
+
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
-    int direction = 1;
 
     if(e->modifier == 0) {
         switch(e->key) {
             case 'G': {
                 view_move_cursor(v, 0, v->buff->lines.len);
             } break;
-            case 'b':
-                direction = -1;
-            /* fall through */
+            case 'b': {
+                if(view_move_cursor_word_start(v)) return -1;
+            } break;
+            case 'e': {
+                if(view_move_cursor_word_end(v)) return -1;
+            } break;
             case 'w': {
-                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
-                // line is empty
-                if(!str_len(&l->text)) {
-                    break;
-                }
-
-                int (*f)(wint_t);
-                utf32 c = view_get_cursor_char(v);
-                wint_t wc = utf32_to_wint(c);
-                if(isword(wc)) {
-                    f = isword;
-                } else if(iswordpunct(wc)) {
-                    f = iswordpunct;
-                } else {
-                    f = iswspace;
-                }
-
-                for(size_t i = v->view_cursor.off_x; i < str_len(&l->text); i++) {
-                    c = view_get_cursor_char(v);
-                    wc = utf32_to_wint(c);
-                    if(!f(wc)) break;
-                    view_move_cursor(v, direction, 0);
-                }
+                if(view_move_cursor_word_next(v)) return -1;
             } break;
             case '^': {
                 view_move_cursor_start(v);
@@ -1660,40 +1727,20 @@ int visual_leave(void) {
 
 int visual_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
-    int direction = 1;
 
     if(e->modifier == 0) {
         switch(e->key) {
             case 'G': {
                 view_move_cursor(v, 0, v->buff->lines.len);
             } break;
-            case 'b':
-                direction = -1;
-            /* fall through */
+            case 'b': {
+                if(view_move_cursor_word_start(v)) return -1;
+            } break;
+            case 'e': {
+                if(view_move_cursor_word_end(v)) return -1;
+            } break;
             case 'w': {
-                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
-                // line is empty
-                if(!str_len(&l->text)) {
-                    break;
-                }
-
-                int (*f)(wint_t);
-                utf32 c = view_get_cursor_char(v);
-                wint_t wc = utf32_to_wint(c);
-                if(isword(wc)) {
-                    f = isword;
-                } else if(iswordpunct(wc)) {
-                    f = iswordpunct;
-                } else {
-                    f = iswspace;
-                }
-
-                for(size_t i = v->view_cursor.off_x; i < str_len(&l->text); i++) {
-                    c = view_get_cursor_char(v);
-                    wc = utf32_to_wint(c);
-                    if(!f(wc)) break;
-                    view_move_cursor(v, direction, 0);
-                }
+                if(view_move_cursor_word_next(v)) return -1;
             } break;
             case '^': {
                 view_move_cursor_start(v);
@@ -1820,6 +1867,8 @@ int search_handle_key(struct KeyEvent *e) {
             struct Line *line = buffer_line_get(MESSAGE.buff, 0);
             // this only checks the first line
             editor_search(str_as_cstr(&line->text)+1);
+            struct View *active_view = tab_active_view(tab_active());
+            active_view->view_cursor = active_view->buff->re_state.original_cursor;
             cursor_jump_next_search();
         } break;
     }
@@ -2251,52 +2300,48 @@ void editor_init(void) {
 }
 
 void cursor_jump_prev_search(void) {
+    // TODO(louis) binary search
     struct View *active_view = tab_active_view(tab_active());
-    // no matches
     if(!active_view->buff->re_state.matches.len) return;
 
-    size_t idx;
+    struct ReMatch *match = 0;
+    size_t idx = active_view->buff->re_state.matches.len-1;
 
-    match_maybe(&active_view->buff->re_state.selected,
-            selected, {
-                if(*selected == 0) {
-                    *selected = active_view->buff->re_state.matches.len -1;
-                }
-                else {
-                    *selected -= 1;
-                }
-            },
-            {
-                set_some(&active_view->buff->re_state.selected, 0);
-            }
-        );
-    // always set
-    idx = *as_ptr(&active_view->buff->re_state.selected);
+    match = vec_get(&active_view->buff->re_state.matches, idx);
+    while(match->line > active_view->view_cursor.off_y
+            || (match->line == active_view->view_cursor.off_y
+                && match->col >= active_view->view_cursor.off_x)) {
+        if(idx == 0) {
+            match = vec_get(
+                    &active_view->buff->re_state.matches,
+                    active_view->buff->re_state.matches.len-1);
+            break;
+        }
+        idx--;
+        match = vec_get(&active_view->buff->re_state.matches, idx);
+    }
 
-    struct ReMatch *match = vec_get(&active_view->buff->re_state.matches, idx);
-
-    active_view->view_cursor.off_x = match->col;
-    active_view->view_cursor.off_y = match->line;
+    view_set_cursor(active_view, match->col, match->line);
 }
 
 void cursor_jump_next_search(void) {
     struct View *active_view = tab_active_view(tab_active());
     if(!active_view->buff->re_state.matches.len) return;
 
-    size_t idx;
+    struct ReMatch *match = 0;
+    size_t idx = 0;
 
-    match_maybe(&active_view->buff->re_state.selected,
-            selected, {
-                *selected = (*selected + 1) % active_view->buff->re_state.matches.len;
-            },
-            {
-                set_some(&active_view->buff->re_state.selected, 0);
-            }
-        );
-    // always set
-    idx = *as_ptr(&active_view->buff->re_state.selected);
-
-    struct ReMatch *match = vec_get(&active_view->buff->re_state.matches, idx);
+    match = vec_get(&active_view->buff->re_state.matches, idx);
+    while(match->line < active_view->view_cursor.off_y
+            || (match->line == active_view->view_cursor.off_y
+                && match->col <= active_view->view_cursor.off_x)) {
+        if(idx == active_view->buff->re_state.matches.len-1) {
+            match = vec_get(&active_view->buff->re_state.matches, 0);
+            break;
+        }
+        idx = (idx + 1) % active_view->buff->re_state.matches.len;
+        match = vec_get(&active_view->buff->re_state.matches, idx);
+    }
 
     view_set_cursor(active_view, match->col, match->line);
 }
