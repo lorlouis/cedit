@@ -1350,42 +1350,152 @@ int isword(wint_t c) {
     return !iswordpunct(c) && !iswspace(c);
 }
 
+int view_move_cursor_word_start(struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    utf32 c = 0;
+    // I miss closures
+    // TODO(louis) move to it's own function
+    #define WALK_BACK_CURSOR(test) \
+        if(v->view_cursor.off_x == 0) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(test) || v->view_cursor.off_y == 0) break; \
+            view_move_cursor(v, 0, -1); \
+            view_move_cursor_end(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, -1, 0); \
+        }
+    // never break
+    do { WALK_BACK_CURSOR(1); } while(0);
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+
+    int (*func)(utf32) = isword;
+    if(iswordpunct(c)) func = iswordpunct;
+    else if(iswspace(c)) func = iswspace;
+
+    while(!func(c)) {
+        WALK_BACK_CURSOR(!func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    struct ViewCursor last = v->view_cursor;
+    while(func(c)) {
+        last = v->view_cursor;
+        WALK_BACK_CURSOR(func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+    // walk forward one position
+    if(func != iswspace) v->view_cursor = last;
+    return 0;
+}
+
+int view_move_cursor_word_end(struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    utf32 c = 0;
+    // I miss closures
+    #define ADVANCE_CURSOR(test) \
+        if(v->view_cursor.off_x + 1 >= str_len(&l->text)) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(test) || v->view_cursor.off_y + 1 >= v->buff->lines.len) break; \
+            view_move_cursor(v, 0, 1); \
+            view_move_cursor_start(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, 1, 0); \
+        }
+    // never break
+    do { ADVANCE_CURSOR(1); } while(0);
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+
+    int (*func)(utf32) = isword;
+    if(iswordpunct(c)) func = iswordpunct;
+    else if(iswspace(c)) func = iswspace;
+
+    while(!func(c)) {
+        ADVANCE_CURSOR(!func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    struct ViewCursor last = v->view_cursor;
+    while(func(c)) {
+        last = v->view_cursor;
+        ADVANCE_CURSOR(func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+    #undef ADVANCE_CURSOR
+    // walk back one position
+    if(func != iswspace) v->view_cursor = last;
+    return 0;
+}
+
+int view_move_cursor_word_next(struct View *v) {
+    struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+
+    utf32 c = 0;
+    // I miss closures
+    #define ADVANCE_CURSOR(test) \
+        if(v->view_cursor.off_x + 1 >= str_len(&l->text)) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(test) || v->view_cursor.off_y + 1 >= v->buff->lines.len) break; \
+            view_move_cursor(v, 0, 1); \
+            view_move_cursor_start(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, 1, 0); \
+        }
+    // only errors out if the line has a length of zero
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c) == -1) c = L'\n';
+
+    int (*func)(utf32) = isword;
+    if(iswordpunct(c)) func = iswordpunct;
+    else func = iswspace;
+
+    // never break
+    do {
+        if(v->view_cursor.off_x + 1 >= str_len(&l->text)) { \
+            /* test is used to check newlines against the current func */ \
+            if(!(1) || v->view_cursor.off_y + 1 >= v->buff->lines.len) break; \
+            view_move_cursor(v, 0, 1); \
+            view_move_cursor_start(v); \
+            l = buffer_line_get(v->buff, v->view_cursor.off_y); \
+        } else { \
+            view_move_cursor(v, 1, 0); \
+        }
+    } while(0);
+    if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+
+    while(func(c)) {
+        ADVANCE_CURSOR(func('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    while(iswspace(c)) {
+        ADVANCE_CURSOR(iswspace('\n'));
+        if(str_get_char(&l->text, v->view_cursor.off_x, &c)) return -1;
+    }
+
+    #undef ADVANCE_CURSOR
+    return 0;
+}
+
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
-    int direction = 1;
 
     if(e->modifier == 0) {
         switch(e->key) {
             case 'G': {
                 view_move_cursor(v, 0, v->buff->lines.len);
             } break;
-            case 'b':
-                direction = -1;
-            /* fall through */
+            case 'b': {
+                if(view_move_cursor_word_start(v)) return -1;
+            } break;
+            case 'e': {
+                if(view_move_cursor_word_end(v)) return -1;
+            } break;
             case 'w': {
-                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
-                // line is empty
-                if(!str_len(&l->text)) {
-                    break;
-                }
-
-                int (*f)(wint_t);
-                utf32 c = view_get_cursor_char(v);
-                wint_t wc = utf32_to_wint(c);
-                if(isword(wc)) {
-                    f = isword;
-                } else if(iswordpunct(wc)) {
-                    f = iswordpunct;
-                } else {
-                    f = iswspace;
-                }
-
-                for(size_t i = v->view_cursor.off_x; i < str_len(&l->text); i++) {
-                    c = view_get_cursor_char(v);
-                    wc = utf32_to_wint(c);
-                    if(!f(wc)) break;
-                    view_move_cursor(v, direction, 0);
-                }
+                if(view_move_cursor_word_next(v)) return -1;
             } break;
             case '^': {
                 view_move_cursor_start(v);
@@ -1660,40 +1770,20 @@ int visual_leave(void) {
 
 int visual_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
-    int direction = 1;
 
     if(e->modifier == 0) {
         switch(e->key) {
             case 'G': {
                 view_move_cursor(v, 0, v->buff->lines.len);
             } break;
-            case 'b':
-                direction = -1;
-            /* fall through */
+            case 'b': {
+                if(view_move_cursor_word_start(v)) return -1;
+            } break;
+            case 'e': {
+                if(view_move_cursor_word_end(v)) return -1;
+            } break;
             case 'w': {
-                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
-                // line is empty
-                if(!str_len(&l->text)) {
-                    break;
-                }
-
-                int (*f)(wint_t);
-                utf32 c = view_get_cursor_char(v);
-                wint_t wc = utf32_to_wint(c);
-                if(isword(wc)) {
-                    f = isword;
-                } else if(iswordpunct(wc)) {
-                    f = iswordpunct;
-                } else {
-                    f = iswspace;
-                }
-
-                for(size_t i = v->view_cursor.off_x; i < str_len(&l->text); i++) {
-                    c = view_get_cursor_char(v);
-                    wc = utf32_to_wint(c);
-                    if(!f(wc)) break;
-                    view_move_cursor(v, direction, 0);
-                }
+                if(view_move_cursor_word_next(v)) return -1;
             } break;
             case '^': {
                 view_move_cursor_start(v);

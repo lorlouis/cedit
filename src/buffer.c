@@ -65,6 +65,7 @@ int buffer_init_from_path(
         return -1;
 }
 
+/// Width of the number line for that given buffer
 int buffer_num_width(struct Buffer *buff) {
     int num_width = ceil(log10((double)buff->lines.len)) + 1;
     if(num_width < 2) num_width = 2;
