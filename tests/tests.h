@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/wait.h>
+#include <stdlib.h>
+#include <assert.h>
 
 #define STRINGIFY(s) XSTRINGIFY(s)
 #define XSTRINGIFY(s) #s
@@ -34,7 +37,11 @@ int main(int argc, char **argv) { \
         char *test_name = STRINGIFY(name); \
         test_count += 1; \
         status = 0; \
-        printf("\033[0;33mRunning\033[0m %s", test_name);
+        printf("\033[0;33mRunning\033[0m %s", test_name); \
+        fflush(stdout); \
+        pid_t pid = fork(); \
+        assert(pid >= 0); \
+        if(!pid) {
 
 #define ASSERT(condition) \
         if(!status && !(condition)) { \
@@ -44,12 +51,18 @@ int main(int argc, char **argv) { \
         }
 
 #define TEST_ENDDEF \
-        if(status) { \
+            exit(status); \
+        } \
+        assert(waitpid(pid, &status, 0)); \
+        int exit_code = 0; \
+        if(WIFEXITED(status)) exit_code = WEXITSTATUS(status); \
+        if(exit_code || WIFSIGNALED(status)) { \
             puts("\t\033[0;31mFAIL\033[0m"); \
             failed_tests_count += 1; \
         } else { \
-            puts("\t\033[0;32mPASS\033[0m"); \
+            puts("\t\033[0;32mOK\033[0m"); \
         } \
+        fflush(stdout); \
     }
 
 #define TESTS_END \

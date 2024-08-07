@@ -7,9 +7,9 @@ TEST_DIR = tests
 OUT	= a.out
 CC	?= gcc
 EXTRAFLAGS ?=
-FLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fsanitize=address
-TEST_FLAGS = $(FLAGS) -DTESTING=1 -Itests
-LFLAGS	= -lm -fsanitize=address
+CFLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fsanitize=address
+TEST_FLAGS = $(CFLAGS) -DTESTING=1 -Itests
+LFLAGS	= -fsanitize=address -lm
 TEST_LFLAGS = $(LFLAGS)
 
 ENTRYPOINT_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(ENTRYPOINT))
@@ -27,7 +27,7 @@ compile_commands.json:
 
 .PHONY: doc
 doc: compile_commands.json
-	cldoc generate $(FLAGS) -isysroot
+	cldoc generate $(CFLAGS) -isysroot
 
 compile: $(ENTRYPOINT_OBJ) $(OBJS)
 	$(CC) -o $(OUT) $^ $(LFLAGS)
@@ -48,7 +48,7 @@ $(BUILD_DIR)/$(TEST_DIR)_%: $(BUILD_DIR)/$(TEST_DIR)_%.o $(OBJS)
 	$(CC) -o $@ $(filter-out $(patsubst $(BUILD_DIR)/$(TEST_DIR)_%.o,$(BUILD_DIR)/%.o,$<),$^) $(LFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(BUILD_DIR)
-	$(CC) $(FLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 .PHONY: clean
 clean:
