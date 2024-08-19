@@ -30,6 +30,7 @@ enum Mode {
     M_Command = 3,
     M_Visual = 4,
     M_Search = 5,
+    M_Visual_Line = 6,
 };
 
 struct ModeInterface {
@@ -63,6 +64,17 @@ struct AbsoluteCursor {
     uint16_t row;
 };
 
+enum ViewSelectionMode {
+    ViewSelectionMode_RANGE = 0,
+    ViewSelectionMode_LINE = 1,
+};
+
+struct ViewSelection {
+    enum ViewSelectionMode mode;
+    ViewCursor start;
+    ViewCursor end;
+};
+
 struct View {
     size_t line_off;
     size_t first_line_char_off;
@@ -74,6 +86,7 @@ struct View {
     _Bool viewport_locked;
     ViewPort vp;
     Maybe(ViewCursor) selection_end;
+    enum ViewSelectionMode selection_mode;
 };
 
 enum Direction {
@@ -146,11 +159,6 @@ void view_set_cursor(struct View *v, size_t x, size_t y);
 int view_write(struct View *v, const char *restrict s, size_t len);
 
 void view_search_re(struct View *v);
-
-struct ViewSelection {
-    ViewCursor start;
-    ViewCursor end;
-};
 
 int view_selection_position_selected(const struct ViewSelection *vs, size_t line_idx, size_t char_off);
 

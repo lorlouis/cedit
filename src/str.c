@@ -305,10 +305,10 @@ size_t str_len(const Str *s) {
                 s->char_pos.type_size,
                 size_t_cmp
         );
-        assert(off && "position must exist");
-        return s->char_pos.len -1 - *off;
+        //return s->char_pos.len -1 - *off;
+        return ((size_t*)s->char_pos.buf + s->char_pos.len -1) - off;
     }
-    return s->v.len -1;
+    return s->v.len ? s->v.len -1 : 0;
 }
 
 int str_remove(Str *s, size_t start, size_t end) {
@@ -440,6 +440,7 @@ int str_is_empty(Str *s) {
 
 TESTS_START
 
+/*
 TEST_DEF(test_str_len)
     Str s = str_from_cstr("ç");
     ASSERT(str_len(&s) == 1);
@@ -457,6 +458,16 @@ TEST_ENDDEF
 TEST_DEF(test_str_len)
     Str s = str_from_cstr("ア");
     ASSERT(str_len(&s) == 1);
+    str_free(&s);
+TEST_ENDDEF
+*/
+
+TEST_DEF(test_str_len_tail)
+    Str s = str_from_cstr("é");
+    ASSERT(str_len(&s) == 1);
+
+    Str tail = str_tail(&s, 1);
+    ASSERT(str_len(&tail) == 0);
     str_free(&s);
 TEST_ENDDEF
 

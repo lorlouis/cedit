@@ -12,7 +12,7 @@
 #define XSTRINGIFY(s) #s
 
 #define TESTS_START \
-_Bool generate_trap = 0; \
+_Bool generate_trap = 1; \
 int main(int argc, char **argv) { \
     printf("\033[0;33mRunning %s's tests\033[0m\n", __FILE__); \
     { \
