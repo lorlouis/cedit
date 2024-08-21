@@ -403,10 +403,12 @@ Str view_selection_get_text(const struct ViewSelection *vs, const struct View *v
                 str_push(&selected, str_as_cstr(&l->text) + char_idx, char_len);
             }
         }
-        if(line_idx != vs->end.off_y || (line_idx == vs->end.off_y && vs->end.off_x == str_len(&l->text)))
+        if(line_idx != vs->end.off_y
+                || (line_idx == vs->end.off_y && vs->end.off_x == str_len(&l->text))
+                || (vs->mode == ViewSelectionMode_LINE)) {
             str_push(&selected, "\n", 2);
+        }
     }
-
     return selected;
 }
 
@@ -1043,39 +1045,46 @@ struct View view_clone(struct View *v) {
     return view;
 }
 
+/// Erases whatever was selected or the character behind the cursor
 int view_erase(struct View *v) {
     size_t cursor = v->view_cursor.off_x;
 
     match_maybe(&v->selection_end,
         selection_end, {
             struct ViewSelection vs = view_selection_from_cursors(v->view_cursor, *selection_end);
+            vs.mode = v->selection_mode;
 
             struct Line *last_line = buffer_line_get(v->buff, vs.end.off_y);
-            Str last_line_tail = str_new();
-            // tries to get the end of the line, if end+1 is included ie: newline
-            // copy line end.off_y +1 instead, and then delete it
-            if(vs.end.off_x < str_len(&last_line->text)) {
-                last_line_tail = str_tail(&last_line->text, vs.end.off_x+1);
+            if(vs.mode == ViewSelectionMode_RANGE) {
+                Str last_line_tail = str_new();
+                // tries to get the end of the line, if end+1 is included ie: newline
+                // copy line end.off_y +1 instead, and then delete it
+                if(vs.end.off_x < str_len(&last_line->text)) {
+                    last_line_tail = str_tail(&last_line->text, vs.end.off_x+1);
 
-                // clone the line, this might be needed if the
-                // first line and the last line are the same line
-                last_line_tail = str_clone(&last_line_tail);
-            } else if(vs.end.off_y+1 < v->buff->lines.len) {
-                struct Line *past_last_line = buffer_line_get(v->buff, vs.end.off_y+1);
-                last_line_tail = str_clone(&past_last_line->text);
-                buffer_line_remove(v->buff, vs.end.off_y+1);
+                    // clone the line, this might be needed if the
+                    // first line and the last line are the same line
+                    last_line_tail = str_clone(&last_line_tail);
+                } else if(vs.end.off_y+1 < v->buff->lines.len) {
+                    struct Line *past_last_line = buffer_line_get(v->buff, vs.end.off_y+1);
+                    last_line_tail = str_clone(&past_last_line->text);
+                    buffer_line_remove(v->buff, vs.end.off_y+1);
+                }
+
+                struct Line *first_line = buffer_line_get(v->buff, vs.start.off_y);
+                // trunk first line
+                line_trunc(first_line, vs.start.off_x);
+                // append the end of the last line
+                line_append(first_line, str_as_cstr(&last_line_tail), str_cstr_len(&last_line_tail));
+                str_free(&last_line_tail);
             }
 
-            struct Line *first_line = buffer_line_get(v->buff, vs.start.off_y);
-            // trunk first line
-            line_trunc(first_line, vs.start.off_x);
-            // append the end of the last line
-            line_append(first_line, str_as_cstr(&last_line_tail), str_cstr_len(&last_line_tail));
-            str_free(&last_line_tail);
-
-            size_t selected_lines_count = vs.end.off_y - vs.start.off_y + 1;
-            for(size_t i = 1; i < selected_lines_count; i++) {
+            size_t selected_lines_count = vs.end.off_y - vs.start.off_y;
+            for(size_t i = 0; i < selected_lines_count; i++) {
                 buffer_line_remove(v->buff, vs.start.off_y + 1);
+            }
+            if(vs.mode == ViewSelectionMode_LINE) {
+                buffer_line_remove(v->buff, vs.start.off_y);
             }
         },
         {
@@ -1649,6 +1658,30 @@ int visual_handle_key(struct KeyEvent *e) {
                 // this skips the mode change setting the position
                 set_none(&v->selection_end);
                 mode_change(M_Normal);
+            } break;
+            case 'p': {
+                struct ViewSelection vs = view_selection_from_cursors(
+                    *as_ptr(&v->selection_end),
+                    v->view_cursor
+                );
+                vs.mode = v->selection_mode;
+
+                match_maybe(&v->selection_end,
+                        selection_end, {
+                            if(view_erase(v)) return -1;
+                        },
+                        {}
+                    );
+
+                Str selection = str_new();
+                if(clipboard_get(&selection)) {
+                    message_print("E: failed to paste: '%s'", strerror(errno));
+                } else {
+                    view_set_cursor(v, vs.mode == ViewSelectionMode_RANGE ? vs.start.off_x : 0, vs.start.off_y);
+                    view_write(v, str_as_cstr(&selection), str_cstr_len(&selection));
+                    mode_change(M_Normal);
+                }
+                str_free(&selection);
             } break;
             case 'y': {
                 struct ViewSelection vs = view_selection_from_cursors(
