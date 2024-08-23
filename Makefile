@@ -7,7 +7,7 @@ TEST_DIR = tests
 OUT	= a.out
 CC	?= gcc
 EXTRAFLAGS ?=
-CFLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fsanitize=address
+CFLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fsanitize=address -fanalyzer
 TEST_FLAGS = $(CFLAGS) -DTESTING=1 -Itests
 LFLAGS	= -fsanitize=address -lm
 TEST_LFLAGS = $(LFLAGS)

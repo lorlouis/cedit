@@ -1,6 +1,7 @@
 #include "buffer.h"
 #include "str.h"
 #include "line.h"
+#include <stdint.h>
 #include <errno.h>
 #include "xalloc.h"
 #include "string.h"

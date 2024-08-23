@@ -655,6 +655,8 @@ void tab_free(struct Tab *t) {
     window_free(&t->w);
 }
 
+// Returns
+//  -1 if the current tab does not have an active window and should be deleted
 int tab_remove_window(struct Tab *t, int id) {
     size_t idx = t->active_window;
     if(id > 0) {
@@ -682,8 +684,9 @@ int tab_remove_window(struct Tab *t, int id) {
         if(child) {
             t->w = *child;
             xfree(child);
+        } else {
+            return -1;
         }
-        return -1;
     }
     return 0;
 }
@@ -746,19 +749,25 @@ struct View* window_view_get(struct Window *w, size_t idx) {
     return VEC_GET(struct View, &w->view_stack, idx);
 }
 
-void window_close_view(struct Window *w, int id) {
+// Returns -1 if the window does not contain any views and should be closed
+int window_close_view(struct Window *w, int id) {
     size_t idx = w->active_view;
     if(id >= 0) {
         idx = (size_t) id;
     }
-
+    assert(w->view_stack.free_fn && "should contain a free function");
     vec_remove(&w->view_stack, idx);
 
     if(w->active_view >= idx && w->active_view > 0) {
         w->active_view -= 1;
     }
 
-    return;
+    // the window should be closed
+    if(w->view_stack.len == 0) {
+        return -1;
+    }
+
+    return 0;
 }
 
 struct View* window_view_active(struct Window *w) {
@@ -1683,6 +1692,22 @@ int visual_handle_key(struct KeyEvent *e) {
                 }
                 str_free(&selection);
             } break;
+            case 'x': {
+                struct ViewSelection vs = view_selection_from_cursors(
+                    *as_ptr(&v->selection_end),
+                    v->view_cursor
+                );
+                vs.mode = v->selection_mode;
+                Str selected = view_selection_get_text(&vs, v);
+                if(clipboard_set(str_as_cstr(&selected), str_cstr_len(&selected))) {
+                    message_print("E: failed to copy: '%s'", strerror(errno));
+                    break;
+                }
+                str_free(&selected);
+                view_erase(v);
+                set_none(&v->selection_end);
+                mode_change(M_Normal);
+            } break;
             case 'y': {
                 struct ViewSelection vs = view_selection_from_cursors(
                     *as_ptr(&v->selection_end),
@@ -1928,18 +1953,15 @@ void editor_quit(int no_confirm) {
     struct Tab *active_tab = tab_active();
 
     struct Window *active_window = tab_window_active(active_tab);
-    struct View *v = tab_active_view(tab_active());
+    struct View *v = tab_active_view(active_tab);
 
     if(!no_confirm && v->buff->rc == 0 && v->buff->dirty && v->buff->in.ty != INPUT_SCRATCH) {
         message_print("E: modifications to this buffer would be lost");
         return;
     }
-
-    window_close_view(active_window, -1);
-
-    // remove the view
-    if(active_window->view_stack.len == 0) {
-        // if the window is empty, remove the window
+    // close the current view
+    if(window_close_view(active_window, -1)) {
+        // if the window is empty close the current window
         if(tab_remove_window(active_tab, -1)) {
             // if the tab is empty remove it
             tabs_remove(-1);
@@ -2026,6 +2048,7 @@ int view_from_path(const char *path, enum FileMode fm, struct View *v) {
     char *expanded = 0;
     if(path_expand(path, &expanded)) {
         message_print("E: invalid characters in path: '%s'", path);
+        xfree(buff);
         return -1;
     }
 
@@ -2033,6 +2056,7 @@ int view_from_path(const char *path, enum FileMode fm, struct View *v) {
         const char *error = strerror(errno);
         message_print("E: Unable to open '%s': %s", expanded, error);
         free(expanded);
+        xfree(buff);
         return -1;
     }
 
@@ -2075,6 +2099,8 @@ void editor_split_open(const char *path, enum FileMode fm, enum SplitDir split) 
     struct Tab *active_tab = tab_active();
     struct Window *active_window = tab_window_active(active_tab);
     struct Window *new_win = xcalloc(1, sizeof(struct Window));
+    // init the proper free functions
+    *new_win = window_new();
 
     if(!path) {
         *new_win = window_clone_shallow(active_window);
