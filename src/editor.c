@@ -636,7 +636,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
                     '~'
                 );
         }
-        style_fmt(&base_style, STDOUT_FILENO, "%*c", vp->width, ' ');
+        // todo saturating sub
+        style_fmt(&base_style, STDOUT_FILENO, "%*c", vp->width-1, ' ');
         text_height += 1;
     }
     return 0;
