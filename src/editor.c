@@ -176,9 +176,6 @@ static int view_write_escaped(
             }
         }
 
-        if(vs->mode == ViewSelectionMode_LINE) {
-            assert(c && "null in middle of the line");
-        }
         if(view_selection_position_selected(vs, line_idx, i)) s = style_merge(s, *highlight);
 
         ret = write_char_escaped(&s, c, STDOUT_FILENO);
