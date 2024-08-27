@@ -22,5 +22,7 @@ int style_delist(char *name);
 
 int style_delist_by_id(uint8_t id);
 
+void style_entry_table_free(void);
+
 #endif
 

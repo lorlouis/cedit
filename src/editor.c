@@ -2349,6 +2349,7 @@ void editor_search(const char *re_str) {
 void editor_teardown(void) {
     vec_cleanup(&TABS);
     view_free(&MESSAGE);
+    style_entry_table_free();
 }
 
 #ifdef TESTING

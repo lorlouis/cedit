@@ -37,17 +37,15 @@ int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
 
     do {
         ret = poll(fds, fds_len, 10);
-        if(ret > 0) {
+        while(ret > 0) {
             for(int i = 0; i < fds_len; i++) {
                 if(fds[i].revents & POLLIN) {
                     ret = read(fds[i].fd, buffer, BUFFER_SIZE);
                     if(ret < 0) return -1;
                     str_push(out, buffer, ret);
-                }
-                if(fds[i].revents & POLLNVAL) {
+                } else if(fds[i].revents & POLLNVAL) {
                     assert(0 && "pipe invalid");
-                }
-                if(fds[i].revents & POLLHUP) {
+                } else if(fds[i].revents & POLLHUP) {
                     // WARN(louis) this code assumes there are only 2 fds
                     if(i == 0) {
                         fds[0] = fds[1];
@@ -56,6 +54,7 @@ int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
                     fds_len -= 1;
                 }
             }
+            ret = poll(fds, fds_len, 10);
         }
     } while(!waitpid(handle->pid, &stact_lock, WNOHANG));
     return 0;
@@ -147,6 +146,7 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     posix_spawnattr_destroy(&attrp);
     xfree(command_buffer);
     vec_cleanup(&args);
+
     close(stdin_out);
     close(stdout_in);
     close(stderr_in);
