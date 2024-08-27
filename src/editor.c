@@ -1128,6 +1128,7 @@ int view_erase(struct View *v) {
             }
         }
     );
+    if(v->line_off > v->view_cursor.off_y) v->line_off = v->view_cursor.off_y;
 
     // rerun the search
     if(v->buff->re_state.matches.len) {
