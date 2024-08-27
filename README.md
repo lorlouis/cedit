@@ -9,7 +9,9 @@ A small utf-8 text editor with minimal dependencies
 
 ## Status
 
-This project is not actively maintained, do not used it for anything serious.
+This project is not actively maintained; do not use it for anything serious.
+
+(do not edit `/etc/fstab` with it for example)
 
 ## How to build
 
@@ -23,7 +25,7 @@ found at the bottom of .c files throughout the codebase.
 ### fanalyzer
 
 When build with GCC it is recommended to build the project with
-`EXTRAFLAGS=-fanalyzer make` this will help catch some bugs at compile time.
+`EXTRAFLAGS=-fanalyzer make`. This will help catch some bugs at compile time.
 
 ### TODO
 
