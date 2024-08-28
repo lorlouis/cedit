@@ -1300,6 +1300,17 @@ int view_move_cursor_word_next(struct View *v) {
     return 0;
 }
 
+int count_indent(Str *s) {
+    size_t indent = 0;
+    utf32 c = 0;
+    while(indent < str_len(s)
+            && !str_get_char(s, indent, &c)
+            && iswspace(c)) {
+        indent+=1;
+    }
+    return indent;
+}
+
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
 
@@ -1328,9 +1339,15 @@ int normal_handle_key(struct KeyEvent *e) {
                 }
             } break;
             case 'O': {
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                int indent = count_indent(&l->text);
+
                 view_move_cursor_start(v);
                 view_write(v, "\n", sizeof("\n")-1);
                 view_move_cursor(v, 0, -1);
+                for(size_t i = 0; i < indent; i++) {
+                    view_write(v, " ", 1);
+                }
                 mode_change(M_Insert);
             } break;
             case 'A': {
@@ -1338,8 +1355,13 @@ int normal_handle_key(struct KeyEvent *e) {
                 mode_change(M_Insert);
             } break;
             case 'o': {
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                int indent = count_indent(&l->text);
                 view_move_cursor_end(v);
                 view_write(v, "\n", sizeof("\n")-1);
+                for(size_t i = 0; i < indent; i++) {
+                    view_write(v, " ", 1);
+                }
                 mode_change(M_Insert);
             } break;
             case 'v': {
@@ -1351,6 +1373,10 @@ int normal_handle_key(struct KeyEvent *e) {
             case '$': {
                 view_move_cursor_end(v);
             } break;
+            case 'x': {
+                view_move_cursor(v, 1,0);
+                view_erase(v);
+            } break; 
             case '0': {
                 view_move_cursor_start(v);
             } break;
@@ -1413,14 +1439,11 @@ int normal_handle_key(struct KeyEvent *e) {
             } break;
             case 'y': {
                 if(v->line_off > 0) {
-                    /*
-                    if(v->view_cursor.off_y == render_plan_line_count(&v->vp) + v->line_off -1) {
-                        view_move_cursor(v, 0, -1);
-                    }
-                    */
                     v->line_off -= 1;
                     v->first_line_char_off = 0;
                 }
+                // TODO(louis) move the cursor one line up
+                // when the cursor is at the bottom of the screen
             } break;
             case KC_ARRLEFT:
             case 'h': {
@@ -1466,6 +1489,16 @@ int insert_handle_key(struct KeyEvent *e) {
         return 0;
     } else if(e->key == '\t' && CONFIG.use_spaces) {
         for(int i = 0; i < CONFIG.tab_width; i++) {
+            view_write(v, " ", 1);
+        }
+    } else if(e->key == '\n') {
+        struct Line *l = buffer_line_get(
+            v->buff,
+            v->view_cursor.off_y);
+        int indent = count_indent(&l->text);
+        view_write(v, "\n", 1);
+        // TODO(louis) make the indent stuff work with tabs
+        for(size_t i = 0; i < indent; i++) {
             view_write(v, " ", 1);
         }
     } else if(e->key == KC_DEL) {
@@ -1705,6 +1738,7 @@ int visual_handle_key(struct KeyEvent *e) {
                 str_free(&selected);
                 view_erase(v);
                 set_none(&v->selection_end);
+                view_set_cursor(v, vs.start.off_x, vs.start.off_y);
                 mode_change(M_Normal);
             } break;
             case 'y': {
@@ -2264,6 +2298,9 @@ void cursor_jump_next_search(void) {
         }
         idx = (idx + 1) % active_view->buff->re_state.matches.len;
         match = vec_get(&active_view->buff->re_state.matches, idx);
+    }
+    if(active_view->view_cursor.off_x == match->col && active_view->view_cursor.off_y == match->line) {
+       match = vec_get(&active_view->buff->re_state.matches, 0);
     }
 
     view_set_cursor(active_view, match->col, match->line);
