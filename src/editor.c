@@ -46,7 +46,6 @@ int message_append(const char *fmt, ...) {
     ret = vasprintf(&formatted, fmt, args);
     va_end(args);
     if(ret < 0) {
-        va_end(args);
         return -1;
     }
     s_size = (size_t)ret;
