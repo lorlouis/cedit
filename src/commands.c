@@ -12,13 +12,16 @@ int exec_command(char *command) {
     // detect a shell command
     if(command[1] == '!') {
         SpawnHandle handle = {0};
-        spawn_captured(command+2, &handle);
+        if(spawn_captured(command+2, &handle)) {
+            message_print("E: unable to spawn: %s", command+2);
+            return 0;
+        }
 
         Str out = str_new();
         // todo handle ctrl-c so that it's possible to kill
         // commands that hang, maybe some async here? /shudders/
         // probably should poll
-        spawn_handle_wait_collect_output(&handle, &out);
+        int res = spawn_handle_wait_collect_output(&handle, &out);
         spawn_handle_free(&handle);
 
         struct Window *win = tab_window_active(tab_active());

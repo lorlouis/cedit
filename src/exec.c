@@ -44,7 +44,7 @@ int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
                     if(ret < 0) return -1;
                     str_push(out, buffer, ret);
                 } else if(fds[i].revents & POLLNVAL) {
-                    assert(0 && "pipe invalid");
+                    return -1;
                 } else if(fds[i].revents & POLLHUP) {
                     // WARN(louis) this code assumes there are only 2 fds
                     if(i == 0) {
