@@ -455,6 +455,8 @@ uint16_t view_inner_width(
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     // TODO(louis) use winsize to cutoff text that is partially out of the screen
 
+    v->vp = *vp;
+
     // generate line 0 if it does not already exist
     buffer_line_get(v->buff, 0);
 
@@ -1441,8 +1443,30 @@ int normal_handle_key(struct KeyEvent *e) {
                     v->line_off -= 1;
                     v->first_line_char_off = 0;
                 }
-                // TODO(louis) move the cursor one line up
+                size_t line_count = 0;
+                size_t inner_width = view_inner_width(v, &v->vp);
+                struct Buffer *buff = v->buff;
+                size_t i;
+                // moves the cursor one line up
                 // when the cursor is at the bottom of the screen
+                // on the previous frame (a limitation of immediate mode UIs)
+                for(i=0; i < v->vp.height; i++) {
+                    size_t line_width =
+                        buffer_line_get(buff, i + v->line_off)->render_width;
+                    size_t render_height =
+                        line_width / inner_width
+                        + ((line_width % inner_width) != 0 || line_width == 0);
+                    if(render_height + line_count >= v->vp.height) {
+                        break;
+                    }
+                    line_count += render_height;
+                }
+                if(v->line_off + i <= v->view_cursor.off_y) {
+                    view_set_cursor(
+                            v,
+                            v->view_cursor.off_x,
+                            v->line_off + i -1);
+                }
             } break;
             case KC_ARRLEFT:
             case 'h': {

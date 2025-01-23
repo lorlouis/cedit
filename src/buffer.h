@@ -64,6 +64,7 @@ struct Buffer {
     int dirty;
     struct ReState re_state;
     size_t rc;
+    Str onsave;
 };
 
 // Returns:
