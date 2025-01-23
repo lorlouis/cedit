@@ -46,7 +46,6 @@ int message_append(const char *fmt, ...) {
     ret = vasprintf(&formatted, fmt, args);
     va_end(args);
     if(ret < 0) {
-        va_end(args);
         return -1;
     }
     s_size = (size_t)ret;
@@ -455,6 +454,8 @@ uint16_t view_inner_width(
 
 int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct AbsoluteCursor *ac) {
     // TODO(louis) use winsize to cutoff text that is partially out of the screen
+
+    v->vp = *vp;
 
     // generate line 0 if it does not already exist
     buffer_line_get(v->buff, 0);
@@ -1128,6 +1129,7 @@ int view_erase(struct View *v) {
             }
         }
     );
+    if(v->line_off > v->view_cursor.off_y) v->line_off = v->view_cursor.off_y;
 
     // rerun the search
     if(v->buff->re_state.matches.len) {
@@ -1299,6 +1301,17 @@ int view_move_cursor_word_next(struct View *v) {
     return 0;
 }
 
+int count_indent(Str *s) {
+    size_t indent = 0;
+    utf32 c = 0;
+    while(indent < str_len(s)
+            && !str_get_char(s, indent, &c)
+            && iswspace(c)) {
+        indent+=1;
+    }
+    return indent;
+}
+
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
 
@@ -1327,9 +1340,15 @@ int normal_handle_key(struct KeyEvent *e) {
                 }
             } break;
             case 'O': {
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                int indent = count_indent(&l->text);
+
                 view_move_cursor_start(v);
                 view_write(v, "\n", sizeof("\n")-1);
                 view_move_cursor(v, 0, -1);
+                for(size_t i = 0; i < indent; i++) {
+                    view_write(v, " ", 1);
+                }
                 mode_change(M_Insert);
             } break;
             case 'A': {
@@ -1337,8 +1356,13 @@ int normal_handle_key(struct KeyEvent *e) {
                 mode_change(M_Insert);
             } break;
             case 'o': {
+                struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
+                int indent = count_indent(&l->text);
                 view_move_cursor_end(v);
                 view_write(v, "\n", sizeof("\n")-1);
+                for(size_t i = 0; i < indent; i++) {
+                    view_write(v, " ", 1);
+                }
                 mode_change(M_Insert);
             } break;
             case 'v': {
@@ -1350,6 +1374,10 @@ int normal_handle_key(struct KeyEvent *e) {
             case '$': {
                 view_move_cursor_end(v);
             } break;
+            case 'x': {
+                view_move_cursor(v, 1,0);
+                view_erase(v);
+            } break; 
             case '0': {
                 view_move_cursor_start(v);
             } break;
@@ -1412,13 +1440,32 @@ int normal_handle_key(struct KeyEvent *e) {
             } break;
             case 'y': {
                 if(v->line_off > 0) {
-                    /*
-                    if(v->view_cursor.off_y == render_plan_line_count(&v->vp) + v->line_off -1) {
-                        view_move_cursor(v, 0, -1);
-                    }
-                    */
                     v->line_off -= 1;
                     v->first_line_char_off = 0;
+                }
+                size_t line_count = 0;
+                size_t inner_width = view_inner_width(v, &v->vp);
+                struct Buffer *buff = v->buff;
+                size_t i;
+                // moves the cursor one line up
+                // when the cursor is at the bottom of the screen
+                // on the previous frame (a limitation of immediate mode UIs)
+                for(i=0; i < v->vp.height; i++) {
+                    size_t line_width =
+                        buffer_line_get(buff, i + v->line_off)->render_width;
+                    size_t render_height =
+                        line_width / inner_width
+                        + ((line_width % inner_width) != 0 || line_width == 0);
+                    if(render_height + line_count >= v->vp.height) {
+                        break;
+                    }
+                    line_count += render_height;
+                }
+                if(v->line_off + i <= v->view_cursor.off_y) {
+                    view_set_cursor(
+                            v,
+                            v->view_cursor.off_x,
+                            v->line_off + i -1);
                 }
             } break;
             case KC_ARRLEFT:
@@ -1465,6 +1512,16 @@ int insert_handle_key(struct KeyEvent *e) {
         return 0;
     } else if(e->key == '\t' && CONFIG.use_spaces) {
         for(int i = 0; i < CONFIG.tab_width; i++) {
+            view_write(v, " ", 1);
+        }
+    } else if(e->key == '\n') {
+        struct Line *l = buffer_line_get(
+            v->buff,
+            v->view_cursor.off_y);
+        int indent = count_indent(&l->text);
+        view_write(v, "\n", 1);
+        // TODO(louis) make the indent stuff work with tabs
+        for(size_t i = 0; i < indent; i++) {
             view_write(v, " ", 1);
         }
     } else if(e->key == KC_DEL) {
@@ -1704,6 +1761,7 @@ int visual_handle_key(struct KeyEvent *e) {
                 str_free(&selected);
                 view_erase(v);
                 set_none(&v->selection_end);
+                view_set_cursor(v, vs.start.off_x, vs.start.off_y);
                 mode_change(M_Normal);
             } break;
             case 'y': {
@@ -2263,6 +2321,9 @@ void cursor_jump_next_search(void) {
         }
         idx = (idx + 1) % active_view->buff->re_state.matches.len;
         match = vec_get(&active_view->buff->re_state.matches, idx);
+    }
+    if(active_view->view_cursor.off_x == match->col && active_view->view_cursor.off_y == match->line) {
+       match = vec_get(&active_view->buff->re_state.matches, 0);
     }
 
     view_set_cursor(active_view, match->col, match->line);

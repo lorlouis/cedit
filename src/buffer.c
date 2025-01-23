@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include <errno.h>
 #include "xalloc.h"
-#include "string.h"
 #include <math.h>
+#include "commands.h"
+#include "string.h"
 
 FILE* filemode_open(
         enum FileMode fm,
@@ -141,6 +142,7 @@ int buffer_dump(
 
     fclose(f);
     buff->dirty = 0;
+    exec_command(str_as_cstr(&buff->onsave));
     return 0;
 }
 
@@ -192,6 +194,7 @@ static void buffer_cleanup(struct Buffer *buff) {
             break;
     }
     re_state_free(&buff->re_state);
+    str_free(&buff->onsave);
     memset(buff, 0, sizeof(struct Buffer));
 }
 
