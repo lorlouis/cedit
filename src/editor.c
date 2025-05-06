@@ -9,6 +9,7 @@
 #include "line.h"
 #include "exec.h"
 
+#include <ctype.h>
 #include <regex.h>
 #include <wordexp.h>
 #include <stdarg.h>
@@ -110,9 +111,14 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
     } else if (iswprint(wc)) {
         utf32_to_utf8(c, char_buffer, 4);
         if(fd != -1) {
-            style_fmt(base_style, fd, "%*s", utf32_len_utf8(c), char_buffer);
+            if(utf32_width(c)) {
+                style_fmt(base_style, fd, "%*s", utf32_len_utf8(c), char_buffer);
+                count += utf32_width(c);
+            } else {
+                style_fmt(base_style, fd, "\\%2x", c, char_buffer);
+                count += 3;
+            }
         }
-        count += utf32_width(c);
     }
 
     return count;
@@ -259,7 +265,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
         while(off < len && s[off] != '\n' && s[off] != '\0') off += 1;
         line_append(l, s + last_off, off - last_off);
         v->view_cursor.off_x = str_len(&l->text);
-        if(s[off] == '\n') {
+        if(off < len && s[off] == '\n') {
             off += 1;
             buffer_line_insert(v->buff, v->view_cursor.off_y+1, line_new());
             v->view_cursor.off_y += 1;
@@ -1425,8 +1431,12 @@ int normal_handle_key(struct KeyEvent *e) {
             case 'N': {
                 cursor_jump_prev_search();
             } break;
-            default:
-                break;
+            default: {
+                if(isalnum((char)e->key)) {
+                    char c = (char)e->key;
+                    view_write(&MESSAGE, &c, 1);
+                }
+            } break;
         }
     } else if (e->modifier == KM_Ctrl) {
         switch(e->key) {
@@ -1612,6 +1622,7 @@ int command_handle_key(struct KeyEvent *e) {
                 mode_change(M_Normal);
             }
             return 0;
+        } else if(e->key == '\t') {
         }
     }
     switch(e->key) {
@@ -1848,12 +1859,22 @@ int search_handle_key(struct KeyEvent *e) {
     return 0;
 }
 
+int normal_enter(void) {
+    message_clear();
+    return 0;
+}
+
+int normal_leave(void) {
+    message_clear();
+    return 0;
+}
+
 static struct ModeInterface MODES[] = {
     (struct ModeInterface){
         .mode_str = "NOR",
         .handle_key = normal_handle_key,
-        .on_enter = 0,
-        .on_leave = 0,
+        .on_enter = normal_enter,
+        .on_leave = normal_leave,
     },
     (struct ModeInterface){
         .mode_str = "INS",
@@ -1984,14 +2005,9 @@ int editor_render(struct winsize *ws) {
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
 
-    if(MESSAGE.buff->lines.len && MODE == M_Command) {
+    if(MESSAGE.buff->lines.len && (MODE == M_Command || MODE == M_Normal)) {
         assert(MESSAGE.buff->lines.len <= 1 && "commands should fit on one line");
         if(message_line_render(ws, &ac)) {
-            write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
-            return -1;
-        }
-    } else {
-        if(message_line_render(ws, 0)) {
             write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
             return -1;
         }

@@ -6,9 +6,12 @@ const struct config CONFIG = {
 #ifdef __MACH__
     .copy_command = "pbcopy",
     .paste_command = "pbpaste",
-#else
+#elifdef XORG
     .copy_command = "xsel -b -i",
     .paste_command = "xsel -b -o",
+#else
+    .copy_command = "wl-copy -p",
+    .paste_command = "wl-paste -p",
 #endif
     .poll_delay = 25000,
 };

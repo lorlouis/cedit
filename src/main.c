@@ -14,6 +14,8 @@
 #include "editor.h"
 #include "utf.h"
 
+#include <sanitizer/asan_interface.h>
+
 struct termios INITIAL = {0};
 static int REDRAW = 0;
 
@@ -89,6 +91,8 @@ int handle_keys(void) {
 }
 
 int main(int argc, const char **argv) {
+    __sanitizer_set_report_path("./asan.log");
+
     // parse options
     load_locale();
 
