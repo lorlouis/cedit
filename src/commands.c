@@ -159,13 +159,3 @@ int exec_command(char *command) {
     }
     return 0;
 }
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TESTS_END
-
-#endif

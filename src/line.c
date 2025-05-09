@@ -72,13 +72,3 @@ int line_append(struct Line *l, const char *s, size_t len) {
     l->render_width = render_width(&l->text, str_len(&l->text));
     return ret;
 }
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TESTS_END
-
-#endif

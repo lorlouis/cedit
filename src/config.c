@@ -15,13 +15,3 @@ const struct config CONFIG = {
 #endif
     .poll_delay = 25000,
 };
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TESTS_END
-
-#endif

@@ -333,14 +333,3 @@ size_t render_width(Str *s, size_t len) {
     }
     return width;
 }
-
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TESTS_END
-
-#endif

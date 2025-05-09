@@ -160,17 +160,3 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     spawn_handle->stderr_fd = stderr_out;
     return 0;
 }
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TEST_DEF(test_hello)
-	TEST_ASSERT(1);
-TEST_ENDDEF
-
-TESTS_END
-
-#endif

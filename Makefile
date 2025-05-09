@@ -12,13 +12,16 @@ TEST_FLAGS = $(CFLAGS) -DTESTING=1 -Itests
 LFLAGS	= -lm -fsanitize=address
 TEST_LFLAGS = $(LFLAGS)
 
+
 ENTRYPOINT_OBJ = $(patsubst %.c,$(BUILD_DIR)/%.o,$(ENTRYPOINT))
 
 OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCE))
-
-TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(SOURCE))
-
-TEST_EXECS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%,$(SOURCE))
+TESTABLE_SOURCES != grep -rl '\#ifdef TESTING' $(SRC_DIR) \
+	| sed "s$(SRC_DIR)/" \
+	| sed "s$(ENTRYPOINT)" \
+	| tr '\n' ' '
+TEST_OBJS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%.o,$(TESTABLE_SOURCES))
+TEST_EXECS = $(patsubst %.c,$(BUILD_DIR)/$(TEST_DIR)_%,$(TESTABLE_SOURCES))
 
 all: $(BUILD_DIR) compile tests
 
@@ -36,7 +39,9 @@ compile: $(ENTRYPOINT_OBJ) $(OBJS)
 test: tests
 .PHONY: tests
 tests: $(TEST_EXECS)
-	echo $^ | xargs -n 1 bash -c
+	@[[ -z "$^" ]] \
+		&& echo "no tests to run" \
+		|| echo $^ | xargs -n 1 bash -c
 
 $(BUILD_DIR):
 	mkdir $(BUILD_DIR)

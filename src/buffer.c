@@ -213,13 +213,3 @@ int buffer_rc_dec(struct Buffer *buff) {
     buff->rc -= 1;
     return 0;
 }
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TESTS_END
-
-#endif

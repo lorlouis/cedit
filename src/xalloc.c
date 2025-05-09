@@ -24,13 +24,3 @@ void xfree(void *ptr) {
     free(ptr);
     return;
 }
-
-#ifdef TESTING
-
-#include "tests.h"
-
-TESTS_START
-
-TESTS_END
-
-#endif
