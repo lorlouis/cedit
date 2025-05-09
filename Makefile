@@ -7,7 +7,7 @@ TEST_DIR = tests
 OUT	= a.out
 CC	?= gcc
 EXTRAFLAGS ?=
-CFLAGS	= --std=gnu17 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fanalyzer -Wno-analyzer-use-of-uninitialized-value -fsanitize=bounds-strict,undefined#,address
+CFLAGS	= --std=gnu23 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fanalyzer -Wno-analyzer-use-of-uninitialized-value -fsanitize=bounds-strict,undefined#,address
 TEST_FLAGS = $(CFLAGS) -DTESTING=1 -Itests
 LFLAGS	= -lm -lubsan # -lasan
 TEST_LFLAGS = $(LFLAGS)
