@@ -6,13 +6,14 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #define STRINGIFY(s) XSTRINGIFY(s)
 #define XSTRINGIFY(s) #s
 
 #define TESTS_START \
-_Bool generate_trap = 1; \
+_Bool generate_trap = 0; \
 int main(int argc, char **argv) { \
     printf("\033[0;33mRunning %s's tests\033[0m\n", __FILE__); \
     { \
@@ -39,26 +40,36 @@ int main(int argc, char **argv) { \
         status = 0; \
         printf("\033[0;33mRunning\033[0m %s", test_name); \
         fflush(stdout); \
-        pid_t pid = fork(); \
+        pid_t pid = 0; \
+        if(!generate_trap) { \
+            pid = fork(); \
+        } \
         assert(pid >= 0); \
         if(!pid) {
 
-#define ASSERT(condition) \
+#define TEST_ASSERT(condition) \
         if(!status && !(condition)) { \
             status = 1; \
-            printf("\n\t%s:%d: `%s` is false", __FILE__, __LINE__, STRINGIFY(condition)); \
-            if(generate_trap) raise(SIGTRAP); \
+            puts("\t\033[0;31mFAIL\033[0m"); \
+            printf("%s:%d: `%s` is false\n", __FILE__, __LINE__, STRINGIFY(condition)); \
+            raise(SIGTRAP); \
         }
 
 #define TEST_ENDDEF \
-            exit(status); \
+            if(!generate_trap) exit(status); \
         } \
-        assert(waitpid(pid, &status, 0)); \
-        int exit_code = 0; \
-        if(WIFEXITED(status)) exit_code = WEXITSTATUS(status); \
-        if(exit_code || WIFSIGNALED(status)) { \
-            puts("\t\033[0;31mFAIL\033[0m"); \
-            failed_tests_count += 1; \
+        if(!generate_trap) { \
+            assert(waitpid(pid, &status, 0)); \
+            int exit_code = 0; \
+            if(WIFEXITED(status)) exit_code = WEXITSTATUS(status); \
+            if(exit_code) { \
+                failed_tests_count += 1; \
+            } else if(WIFSIGNALED(status)) { \
+                int sig = WTERMSIG(status); \
+                printf("\t\033[0;31mFAIL WITH SIG: %s\033[0m\n", strsignal(sig)); \
+            } else { \
+                puts("\t\033[0;32mOK\033[0m"); \
+            } \
         } else { \
             puts("\t\033[0;32mOK\033[0m"); \
         } \
@@ -67,7 +78,7 @@ int main(int argc, char **argv) { \
 
 #define TESTS_END \
     printf("\tRan %d tests\t%d Failed\n", test_count, failed_tests_count); \
-    return failed_tests_count != 0 && status == 0; \
+    return failed_tests_count != 0 && status != 0; \
 }
 
 #endif

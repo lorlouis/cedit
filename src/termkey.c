@@ -544,21 +544,21 @@ TESTS_START
 TEST_DEF(readkey_japanese)
     FILE *f = tmpfile();
     if(!f) {
-        ASSERT(f && "tmp file could not be opened");
+        TEST_ASSERT(f && "tmp file could not be opened");
     } else {
         int fno = fileno(f);
         struct KeyEvent e = {0};
         int ret = write(fno, "アイドル", 12);
-        ASSERT(ret == 12);
+        TEST_ASSERT(ret == 12);
         rewind(f);
 
         ret = readkey(fno, &e);
-        ASSERT(ret == 1);
-        ASSERT(e.key = 12450);
+        TEST_ASSERT(ret == 1);
+        TEST_ASSERT(e.key = 12450);
 
         ret = readkey(fno, &e);
-        ASSERT(ret == 1);
-        ASSERT(e.key = 12452);
+        TEST_ASSERT(ret == 1);
+        TEST_ASSERT(e.key = 12452);
     }
 TEST_ENDDEF
 
@@ -573,12 +573,12 @@ TEST_DEF(keyevent_fmt)
     };
 
     int len = keyevent_fmt(&e, buf, BUF_LEN);
-    ASSERT(len == 3);
+    TEST_ASSERT(len == 3);
 
     const char *expected = "实";
 
     // assert that the null terminator was written
-    ASSERT(!strncmp(buf, expected, 4));
+    TEST_ASSERT(!strncmp(buf, expected, 4));
 
     e = (struct KeyEvent) {
         .modifier = KM_Meta,
@@ -587,10 +587,10 @@ TEST_DEF(keyevent_fmt)
 
     // pass in a buffer that's too small
     len = keyevent_fmt(&e, buf, BUF_LEN);
-    ASSERT(len < 0);
+    TEST_ASSERT(len < 0);
     // pass in a null buffer and get the expected size (minus null terminator)
     len = keyevent_fmt(&e, 0, BUF_LEN);
-    ASSERT(len == 11);
+    TEST_ASSERT(len == 11);
 
 TEST_ENDDEF
 

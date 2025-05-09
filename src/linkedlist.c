@@ -65,7 +65,7 @@ TEST_DEF(test_offset)
     } v;
 
     // assert that the container of macro works
-    ASSERT(container_of(&v.ll, struct C, ll) == &v);
+    TEST_ASSERT(container_of(&v.ll, struct C, ll) == &v);
 TEST_ENDDEF
 
 TESTS_END

@@ -443,31 +443,31 @@ TESTS_START
 /*
 TEST_DEF(test_str_len)
     Str s = str_from_cstr("ç");
-    ASSERT(str_len(&s) == 1);
+    TEST_ASSERT(str_len(&s) == 1);
     str_free(&s);
 TEST_ENDDEF
 
 TEST_DEF(test_str_tail_len)
     Str s = str_from_cstr("hello world");
-    ASSERT(str_len(&s) == 11);
+    TEST_ASSERT(str_len(&s) == 11);
     Str b = str_tail(&s, 6);
-    ASSERT(str_len(&b) == 5);
+    TEST_ASSERT(str_len(&b) == 5);
     str_free(&s);
 TEST_ENDDEF
 
 TEST_DEF(test_str_len)
     Str s = str_from_cstr("ア");
-    ASSERT(str_len(&s) == 1);
+    TEST_ASSERT(str_len(&s) == 1);
     str_free(&s);
 TEST_ENDDEF
 */
 
 TEST_DEF(test_str_len_tail)
     Str s = str_from_cstr("é");
-    ASSERT(str_len(&s) == 1);
+    TEST_ASSERT(str_len(&s) == 1);
 
     Str tail = str_tail(&s, 1);
-    ASSERT(str_len(&tail) == 0);
+    TEST_ASSERT(str_len(&tail) == 0);
     str_free(&s);
 TEST_ENDDEF
 
