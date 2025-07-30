@@ -126,6 +126,7 @@ void vec_cleanup(Vec *v) {
 }
 
 void vec_clear(Vec *v) {
+    if(v->buf == NULL) return;
     assert(v->cap != SIZE_MAX && "vec is readonly");
     if(v->free_fn) {
         for(size_t i = 0; i < v->len; i++) {

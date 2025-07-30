@@ -10,9 +10,10 @@
 #include "str.h"
 
 #define ESC "\e"
-#define CSI ESC "["
-#define ST  ESC "\\"
-#define RESET CSI "0m"
+#define CSI ESC"["
+#define OSC ESC"]"
+#define ST  ESC"\\"
+#define RESET CSI"0m"
 
 #define BUF_ALT CSI "?1049h"
 #define BUF_MAIN CSI "?1049l"

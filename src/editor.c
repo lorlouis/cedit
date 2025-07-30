@@ -589,7 +589,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
 
         size_t fill = width - target_width;
         if(fill) {
-            style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
+            // style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
+            style_fmt(&base_style, STDOUT_FILENO, CSI"%dX", fill);
         }
 
         size_t line_char_off = idx + (line_idx == 0 ? v->first_line_char_off : 0);
@@ -619,7 +620,8 @@ int view_render(struct View *v, ViewPort *vp, const struct winsize *ws, struct A
 
             size_t fill = width - target_width;
             if(fill) {
-                style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
+                // style_fmt(&base_style, STDOUT_FILENO, "%*c", fill, ' ');
+                style_fmt(&base_style, STDOUT_FILENO, CSI"%dX", fill);
             }
             line_char_off += idx;
             l = line_tail(&l, idx);
@@ -1832,7 +1834,7 @@ int search_handle_key(struct KeyEvent *e) {
             mode_change(M_Normal);
             return 0;
         } else if(e->key == KC_DEL) {
-            // do not erase the leading ':'
+            // do not erase the leading '/'
             if(MESSAGE.view_cursor.off_x > 1) {
                 view_erase(&MESSAGE);
             }
@@ -1996,6 +1998,7 @@ int active_line_render(struct winsize *ws) {
 int editor_render(struct winsize *ws) {
     if(!RUNNING) return 0;
     write(STDOUT_FILENO, CUR_HIDE, sizeof(CUR_HIDE) -1);
+    dprintf(STDOUT_FILENO, CSI"?2026h");
 
     struct AbsoluteCursor ac = {
         .col = 1,
@@ -2005,7 +2008,7 @@ int editor_render(struct winsize *ws) {
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
 
-    if(MESSAGE.buff->lines.len && (MODE == M_Command || MODE == M_Normal)) {
+    if(MESSAGE.buff->lines.len && (MODE == M_Command || MODE == M_Normal || MODE == M_Search)) {
         assert(MESSAGE.buff->lines.len <= 1 && "commands should fit on one line");
         if(message_line_render(ws, &ac)) {
             write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
@@ -2013,7 +2016,9 @@ int editor_render(struct winsize *ws) {
         }
     }
     set_cursor_pos(ac.col, ac.row);
+    dprintf(STDOUT_FILENO, CSI"?2026l"); 
     write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
+    
     return 0;
 }
 
