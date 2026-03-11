@@ -48,7 +48,7 @@ int style_register(char *name, size_t name_len, Style style, uint8_t priority) {
 
     struct StyleEntry *entry = &STYLE_ENTRY_TABLE[id];
 
-    entry->name = xcalloc(name_len, sizeof(char) + 1);
+    entry->name = xcalloc(name_len+1, sizeof(char));
 
     memcpy(entry->name, name, name_len);
 

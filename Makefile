@@ -5,9 +5,9 @@ SRC_DIR = src
 BUILD_DIR = build
 TEST_DIR = tests
 OUT	= a.out
-CC	?= gcc
+CC	?= gcc-14
 EXTRAFLAGS ?=
-CFLAGS	= --std=gnu23 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -fanalyzer -Wno-analyzer-use-of-uninitialized-value -fsanitize=bounds-strict,undefined#,address
+CFLAGS	= --std=gnu23 -g -Wall -Wextra $(EXTRAFLAGS) -I$(SRC_DIR) -Wno-analyzer-use-of-uninitialized-value -fsanitize=bounds-strict,undefined#,address -fanalyzer
 TEST_FLAGS = $(CFLAGS) -DTESTING=1 -Itests
 LFLAGS	= -lm -lubsan # -lasan
 TEST_LFLAGS = $(LFLAGS)

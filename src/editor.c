@@ -39,6 +39,12 @@ void message_clear(void) {
 }
 
 int message_append(const char *fmt, ...) {
+
+    if(MESSAGE.options.ro) {
+        view_clear(&MESSAGE);
+        MESSAGE.options.ro = false;
+    }
+
     va_list args;
     int ret;
     va_start(args, fmt);
@@ -53,7 +59,6 @@ int message_append(const char *fmt, ...) {
 
     view_write(&MESSAGE, formatted, s_size);
     free(formatted);
-    va_end(args);
 
     return s_size;
 }
@@ -73,6 +78,10 @@ int message_print(const char *fmt, ...) {
 
     view_clear(&MESSAGE);
     view_write(&MESSAGE, formatted, s_size);
+
+    // use readonly to show it is a message
+    MESSAGE.options.ro = true;
+
     free(formatted);
 
     return s_size;
@@ -228,6 +237,7 @@ void view_clear(struct View *v) {
         line_free(buffer_line_get(v->buff, i));
     }
     v->buff->lines.len = 0;
+    v->buff->dirty = 1;
 }
 
 void view_free(struct View *v) {
@@ -248,7 +258,7 @@ int view_write(struct View *v, const char *restrict s, size_t len) {
 
     struct Line *l = buffer_line_get(v->buff, v->view_cursor.off_y);
 
-    // safe end of line if the cursor is not at the end of that line
+    // save end of line if the cursor is not at the end of that line
     char *end_of_line = 0;
     size_t end_of_line_len = 0;
     if(v->view_cursor.off_x < str_len(&l->text)) {
@@ -1000,17 +1010,22 @@ int tabs_render(struct winsize *ws, struct AbsoluteCursor *ac) {
             style_reset(STDOUT_FILENO);
             style_begin(&selected, STDOUT_FILENO);
 
+            if(tab_active_view(tab_get(i))->buff->dirty) {
+                dprintf(STDOUT_FILENO, " +");
+                sum+=2;
+            }
+
             if(!str_is_empty(&tab_get(i)->name)) {
                 size_t cols = 10;
                 int idx = take_cols_rev(&tab_get(i)->name, &cols, CONFIG.tab_width);
                 assert(idx >= 0 && "error when computing idx");
                 Str name_str = tab_get(i)->name;
                 const char *name = str_as_cstr(&name_str) + idx;
-                dprintf(STDOUT_FILENO, "[%s]", name);
-                sum+=cols+2;
+                dprintf(STDOUT_FILENO, " %s ", name);
+                sum+=cols+1;
             } else {
-                dprintf(STDOUT_FILENO, "[%.4ld]", i);
-                sum+=6;
+                dprintf(STDOUT_FILENO, " %.4ld ", i);
+                sum+=5;
             }
 
             style_reset(STDOUT_FILENO);
@@ -1320,6 +1335,29 @@ int count_indent(Str *s) {
     return indent;
 }
 
+#define EQ_STATIC_STR(s, buf, len) (sizeof(s) -1) == len && !strncmp(s, buf, len)
+
+int normal_multi_char(Str text) {
+    struct View *v = tab_active_view(tab_active());
+
+    const char *s = text.v.buf;
+    size_t len = str_len(&text);
+
+    if(EQ_STATIC_STR("gg",s, len)) {
+        view_set_cursor(v, 0, 0);
+        return 1;
+    } else if (EQ_STATIC_STR("dd",s, len)) {
+        if(v->view_cursor.off_y + 1 == v->buff->lines.len) {
+            view_move_cursor(v, 0, -1);
+            buffer_line_remove(v->buff, v->view_cursor.off_y+1);
+        } else {
+            buffer_line_remove(v->buff, v->view_cursor.off_y);
+        }
+        return 1;
+    }
+    return 0;
+}
+
 int normal_handle_key(struct KeyEvent *e) {
     struct View *v = tab_active_view(tab_active());
 
@@ -1377,7 +1415,7 @@ int normal_handle_key(struct KeyEvent *e) {
                 mode_change(M_Visual);
             } break;
             case 'V': {
-                mode_change(M_Visual_Line); 
+                mode_change(M_Visual_Line);
             } break;
             case '$': {
                 view_move_cursor_end(v);
@@ -1385,7 +1423,7 @@ int normal_handle_key(struct KeyEvent *e) {
             case 'x': {
                 view_move_cursor(v, 1,0);
                 view_erase(v);
-            } break; 
+            } break;
             case '0': {
                 view_move_cursor_start(v);
             } break;
@@ -1434,9 +1472,16 @@ int normal_handle_key(struct KeyEvent *e) {
                 cursor_jump_prev_search();
             } break;
             default: {
-                if(isalnum((char)e->key)) {
-                    char c = (char)e->key;
-                    view_write(&MESSAGE, &c, 1);
+                if(iswalnum(e->key)) {
+                    char c[4] = {};
+                    int len = utf32_to_utf8(e->key, c, 4);
+                    message_append("%.*s", len, c);
+                    struct Line *l = buffer_line_get(MESSAGE.buff, 0);
+                    int ret = normal_multi_char(l->text);
+                    if(ret) {
+                        message_clear();
+                        return ret;
+                    }
                 }
             } break;
         }
@@ -1591,7 +1636,8 @@ int window_handle_key(struct KeyEvent *e) {
 }
 
 int command_enter(void) {
-    message_print(":");
+    message_clear();
+    message_append(":");
     insert_enter();
     return 0;
 }
@@ -1806,7 +1852,8 @@ int search_enter(void) {
     struct View *active_view = tab_active_view(tab_active());
     active_view->buff->re_state.original_cursor = active_view->view_cursor;
 
-    message_print("/");
+    message_clear();
+    message_append("/");
     insert_enter();
     return 0;
 }
@@ -1840,6 +1887,8 @@ int search_handle_key(struct KeyEvent *e) {
             }
             return 0;
         } else if(e->key == '\n') {
+            // Treat the search string like a message
+            MESSAGE.options.ro = 1;
             mode_change(M_Normal);
             return 0;
         }
@@ -1862,7 +1911,6 @@ int search_handle_key(struct KeyEvent *e) {
 }
 
 int normal_enter(void) {
-    message_clear();
     return 0;
 }
 
@@ -2008,17 +2056,22 @@ int editor_render(struct winsize *ws) {
     if(tabs_render(ws, &ac)) return -1;
     if(active_line_render(ws)) return -1;
 
-    if(MESSAGE.buff->lines.len && (MODE == M_Command || MODE == M_Normal || MODE == M_Search)) {
+    if((MESSAGE.buff->lines.len && (MODE == M_Command || MODE == M_Normal || MODE == M_Search))
+            || MESSAGE.buff->dirty) {
         assert(MESSAGE.buff->lines.len <= 1 && "commands should fit on one line");
-        if(message_line_render(ws, &ac)) {
+        MESSAGE.buff->dirty = 0;
+        struct AbsoluteCursor *msg_ac = (MODE == M_Normal || MODE == M_Insert)
+            ? &(struct AbsoluteCursor){ ac.col, ac.row }
+            : &ac;
+        if(message_line_render(ws, msg_ac)) {
             write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
             return -1;
         }
     }
     set_cursor_pos(ac.col, ac.row);
-    dprintf(STDOUT_FILENO, CSI"?2026l"); 
+    dprintf(STDOUT_FILENO, CSI"?2026l");
     write(STDOUT_FILENO, CUR_SHOW, sizeof(CUR_SHOW) -1);
-    
+
     return 0;
 }
 
@@ -2032,7 +2085,7 @@ void editor_quit(int no_confirm) {
     struct Window *active_window = tab_window_active(active_tab);
     struct View *v = tab_active_view(active_tab);
 
-    if(!no_confirm && v->buff->rc == 0 && v->buff->dirty && v->buff->in.ty != INPUT_SCRATCH) {
+    if(!no_confirm && v->buff->rc == 1 && v->buff->dirty && v->buff->in.ty != INPUT_SCRATCH) {
         message_print("E: modifications to this buffer would be lost");
         return;
     }
@@ -2205,7 +2258,7 @@ void editor_open(const char *path, enum FileMode fm, int no_confirm) {
     struct Window *active_window = tab_window_active(active_tab);
     struct View *active_view = window_view_active(active_window);
 
-    if(!no_confirm && active_view->buff->rc == 0 && active_view->buff->dirty && active_view->buff->in.ty != INPUT_SCRATCH) {
+    if(!no_confirm && active_view->buff->rc == 1 && active_view->buff->dirty && active_view->buff->in.ty != INPUT_SCRATCH) {
         message_print("E: modifications to this buffer would be lost");
         return;
     }

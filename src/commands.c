@@ -33,7 +33,7 @@ int exec_command(char *command) {
                         str_push(
                             &out,
                             str_as_cstr(file_path),
-                            str_len(file_path));
+                            str_cstr_len(file_path));
                     } break;
                 }
             } else {
@@ -143,8 +143,8 @@ int exec_command(char *command) {
         }
         struct View *active_view = tab_active_view(tab_active());
         view_set_cursor(active_view, 0, n-1);
-    } else if(!strcmp(token, "onsave")) {
-        if(!token[7]) {
+    } else if(!strncmp(token, "onsave", 6)) {
+        if(!token[6]) {
             message_print("E: Usage: onsave <command to execute>");
             return -1;
         }

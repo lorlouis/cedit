@@ -56,7 +56,8 @@ typedef struct {
 } ViewPort;
 
 struct ViewOpt {
-    int no_line_num;
+    _Bool no_line_num;
+    _Bool ro;
 };
 
 struct AbsoluteCursor {

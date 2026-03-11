@@ -32,7 +32,7 @@ FILE* filemode_open(
 
 
 struct Buffer buffer_new(void) {
-    struct Buffer buff = {0};
+    struct Buffer buff = {.rc = 1};
     buff.lines = VEC_NEW(struct Line, (void(*)(void*))line_free);
     return buff;
 }
@@ -43,6 +43,7 @@ int buffer_init_from_path(
         const char *path,
         enum FileMode fm) {
 
+    int err = 0;
     errno = 0;
     FILE *f = filemode_open(fm, path);
     // there was an error
@@ -69,7 +70,7 @@ int buffer_init_from_path(
         xfree(line);
 
         if(len == -1 && ferror(f)) {
-            errno = ferror(f);
+            err = ferror(f);
             goto err;
         }
         fclose(f);
@@ -79,7 +80,7 @@ int buffer_init_from_path(
     buff->in.u.file.fm = fm;
     buff->in.u.file.path = str_from_cstr(path);
 
-    buff->rc = 0;
+    buff->rc = 1;
     buff->fm = fm;
 
     return 0;
@@ -87,7 +88,7 @@ int buffer_init_from_path(
     err:
         vec_cleanup(&buff->lines);
         fclose(f);
-        return -1;
+        return err;
 }
 
 /// Width of the number line for that given buffer
@@ -107,10 +108,12 @@ struct Line *buffer_line_get(struct Buffer *buff, size_t idx) {
 }
 
 void buffer_line_remove(struct Buffer *buff, size_t idx) {
+    buff->dirty = 1;
     vec_remove(&buff->lines, idx);
 }
 
 int buffer_line_insert(struct Buffer *buff, size_t idx, struct Line line) {
+    buff->dirty = 1;
     buff->lines.type_size = sizeof(struct Line);
     return vec_insert(&buff->lines, idx, &line);
 }
@@ -205,7 +208,7 @@ struct Buffer* buffer_rc_inc(struct Buffer *buff) {
 }
 
 int buffer_rc_dec(struct Buffer *buff) {
-    if(!buff->rc) {
+    if(buff->rc <= 1) {
         buffer_cleanup(buff);
         xfree(buff);
         return 1;

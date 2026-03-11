@@ -112,6 +112,7 @@ int vec_insert(Vec *v, size_t idx, void *data) {
     }
     vec_grow_to_fit(v, v->len + 1);
     v->len += 1;
+    // it also copies the extra '\0' at len so not a buffer overflow
     memmove(vec_get(v, idx+1), vec_get(v, idx), v->type_size * (v->len - idx));
     memmove(vec_get(v, idx), data, v->type_size);
     return 0;
@@ -293,21 +294,24 @@ size_t str_cstr_len(const Str *s) {
 }
 
 static int size_t_cmp(const void *a, const void *b) {
-    return *(const size_t*)a - *(const size_t*)b;
+    if((*(const size_t*)a < *(const size_t*)b)) return -1;
+    if((*(const size_t*)a > *(const size_t*)b) > 0) return 1;
+    return 0;
 }
 
 // Returns the number of UTF-8 code points.
 size_t str_len(const Str *s) {
     if(s->v.len == 0) return 0;
     if(s->char_pos.len) {
-        size_t *off = bsearch(&s->offset_bytes,
+        size_t *off = bsearch(
+                &s->offset_bytes,
                 s->char_pos.buf,
                 s->char_pos.len,
                 s->char_pos.type_size,
                 size_t_cmp
         );
         //return s->char_pos.len -1 - *off;
-        return ((size_t*)s->char_pos.buf + s->char_pos.len -1) - off;
+        return (((size_t*)s->char_pos.buf + s->char_pos.len -1) - off);
     }
     return s->v.len ? s->v.len -1 : 0;
 }
@@ -330,7 +334,7 @@ int str_remove(Str *s, size_t start, size_t end) {
     ((char*)s->v.buf)[s->v.len-1] = '\0';
 
     if(s->char_pos.len) {
-        vec_trunk(&s->char_pos, end);
+        vec_trunk(&s->char_pos, end - start);
         build_character_table(&s->char_pos, start_idx, s->v.buf, s->v.len);
     }
 
@@ -381,6 +385,7 @@ const char* str_tail_cstr(const Str *s, size_t idx) {
 
 // Returns a readonly Str containing the chars after char idx
 Str str_tail(const Str *s, size_t idx) {
+    if(idx == 0) return *s;
     size_t byte_off = str_get_char_byte_idx(s, idx);
     Vec v = vec_tail(&s->v, byte_off);
     Vec char_pos = {0};

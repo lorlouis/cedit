@@ -27,7 +27,7 @@ static int readuc(int fd, unsigned char *restrict i) {
     unsigned char c = 0;
     while((ret = read(fd, &c, 1)) > 0 && isdigit(c)) {
         // check for overflow
-        if(c > UCHAR_MAX / 10) return -2;
+        if(*i > UCHAR_MAX / 10) return -2;
         *i *= 10;
         if(c > UCHAR_MAX - (c - '0')) return -2;
         *i += c - '0';

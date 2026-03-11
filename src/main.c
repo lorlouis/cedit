@@ -80,7 +80,7 @@ int handle_keys(void) {
     struct KeyEvent e = {0};
     int had_key = 0;
     int ret = 0;
-    while((ret = readkey(STDIN_FILENO, &e) > 0)) {
+    while((ret = readkey(STDIN_FILENO, &e)) > 0) {
         had_key = 1;
         struct ModeInterface mode = mode_current();
         mode.handle_key(&e);

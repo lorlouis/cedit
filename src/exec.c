@@ -84,6 +84,7 @@ int spawn_captured(const char *command, SpawnHandle *spawn_handle) {
     vec_push(&args, &null);
 
     if(pipe(pipdes)) {
+        xfree(command_buffer);
         return -1;
     }
 
