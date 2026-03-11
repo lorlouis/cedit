@@ -42,7 +42,9 @@ int find_next_free_after(uint8_t target_id) {
 //   < 0 On error (out of space after priority)
 //  >= 0 On success (style id)
 int style_register(char *name, size_t name_len, Style style, uint8_t priority) {
-    uint8_t target_id = 255 - priority;
+    // table has 255 slots (indices 0-254); clamp so the loop in
+    // find_next_free_after (i < 255) can always start within range
+    uint8_t target_id = priority >= 255 ? 0 : (uint8_t)(254 - priority);
     int id = find_next_free_after(target_id);
     if(id < 0) return id;
 

@@ -29,7 +29,7 @@ static int readuc(int fd, unsigned char *restrict i) {
         // check for overflow
         if(*i > UCHAR_MAX / 10) return -2;
         *i *= 10;
-        if(c > UCHAR_MAX - (c - '0')) return -2;
+        if((unsigned char)(c - '0') > UCHAR_MAX - *i) return -2;
         *i += c - '0';
     }
     if(ret == -1) return -1;

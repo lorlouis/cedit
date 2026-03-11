@@ -1,4 +1,5 @@
 #include "vt.h"
+#include "config.h"
 
 #include <assert.h>
 #include <unistd.h>
@@ -256,8 +257,10 @@ size_t count_cols(const Str *line, int tab_width) {
             return -1;
         }
 
-        int width = tab_width;
-        if(c != L'\t') width = utf32_width(c);
+        size_t width = utf32_width(c);
+        if(width == 0) {
+            width = snprintf(NULL, 0, "<%X>", c);
+        }
 
         sum += width;
         off += 1;
@@ -277,8 +280,10 @@ ssize_t take_cols(const Str *restrict line, size_t *nb_cols, int tab_width) {
         wint_t wc = utf32_to_wint(c);
         if(wc == 0 || wc == L'\n') break;
 
-        int width = tab_width;
-        if(c != L'\t') width = utf32_width(c);
+        size_t width = utf32_width(c);
+        if(width == 0) {
+            width = snprintf(NULL, 0, "<%X>", c);
+        }
 
         if(sum + width > *nb_cols) {
             *nb_cols = sum;
@@ -306,8 +311,10 @@ ssize_t take_cols_rev(const Str *restrict line, size_t *nb_cols, int tab_width) 
         wint_t wc = utf32_to_wint(c);
         if(wc == 0 || wc == L'\n') break;
 
-        int width = tab_width;
-        if(c != L'\t') width = utf32_width(c);
+        size_t width = utf32_width(c);
+        if(width == 0) {
+            width = snprintf(NULL, 0, "<%X>", c);
+        }
 
         if(sum + width > *nb_cols) {
             *nb_cols = sum;
@@ -329,7 +336,12 @@ size_t render_width(Str *s, size_t len) {
     for(size_t i = 0; i < len; i++) {
         utf32 c = 0;
         assert(!str_get_char(s, i, &c));
-        width += utf32_width(c);
+
+        size_t char_width = utf32_width(c);
+        if(char_width == 0) {
+            char_width = snprintf(NULL, 0, "<%X>", c);
+        }
+        width += char_width;
     }
     return width;
 }

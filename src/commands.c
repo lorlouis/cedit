@@ -136,15 +136,17 @@ int exec_command(char *command) {
             return -1;
         }
         char *end = 0;
-        double n = strtol(token, &end, 10);
+        long n = strtol(token, &end, 10);
         if(!end || *end != '\0' || n <= 0) {
             message_print("E: expected positive integer greater than zero");
             return -1;
         }
         struct View *active_view = tab_active_view(tab_active());
         view_set_cursor(active_view, 0, n-1);
-    } else if(!strncmp(token, "onsave", 6)) {
-        if(!token[6]) {
+    } else if(!strcmp(token, "onsave")) {
+        // use empty delimiter to grab the entire remainder including spaces
+        token = strtok(NULL, "");
+        if(!token) {
             message_print("E: Usage: onsave <command to execute>");
             return -1;
         }
@@ -152,7 +154,7 @@ int exec_command(char *command) {
         struct View *active_view = window_view_active(win);
 
         str_clear(&active_view->buff->onsave);
-        str_push(&active_view->buff->onsave, token+7, strlen(token+7));
+        str_push(&active_view->buff->onsave, token, strlen(token));
     } else {
         message_print("E: unknown command");
         return -1;

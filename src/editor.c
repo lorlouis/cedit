@@ -114,7 +114,10 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
             tail_len = 0;
         }
         if(fd != -1) {
-            style_fmt(&substitution, fd, "%*c%*c", CONFIG.tab_width > 0, '>', tail_len, '-');
+            style_fmt(&substitution, fd, "%*c", CONFIG.tab_width > 0, '>');
+            for(int i = 0; i < tail_len; i++) {
+                style_fmt(&substitution, fd, "%c", '-');
+            }
         }
         count += CONFIG.tab_width;
     } else if (iswprint(wc)) {
@@ -128,6 +131,9 @@ int write_char_escaped(Style *base_style, utf32 c, int fd) {
                 count += 3;
             }
         }
+    } else {
+        style_fmt(&substitution, fd, "<%X>", c);
+        count += snprintf(NULL, 0, "<%X>", c);
     }
 
     return count;
@@ -233,10 +239,7 @@ void view_clear(struct View *v) {
     v->first_line_char_off = 0;
     v->view_cursor.off_x = 0;
     v->view_cursor.off_y = 0;
-    for(size_t i = 0; i < v->buff->lines.len; i++) {
-        line_free(buffer_line_get(v->buff, i));
-    }
-    v->buff->lines.len = 0;
+    vec_clear(&v->buff->lines);
     v->buff->dirty = 1;
 }
 
@@ -418,7 +421,7 @@ Str view_selection_get_text(const struct ViewSelection *vs, const struct View *v
         if(line_idx != vs->end.off_y
                 || (line_idx == vs->end.off_y && vs->end.off_x == str_len(&l->text))
                 || (vs->mode == ViewSelectionMode_LINE)) {
-            str_push(&selected, "\n", 2);
+            str_push(&selected, "\n", 1);
         }
     }
     return selected;
@@ -451,6 +454,7 @@ void view_move_cursor(struct View *v, ssize_t off_x, ssize_t off_y) {
 
 uint16_t view_num_width(const struct View *v) {
     if(v->options.no_line_num) return 0;
+    if(v->buff->lines.len <= 1) return 2;
     // log10 100 = 2, so +1 for 100 and another +1
     // for a space between the number and the text
     return log10(v->buff->lines.len) + 2;
@@ -742,8 +746,10 @@ int tabs_remove(int id) {
 
 int tabs_pop(void) {
     vec_pop(&TABS, 0);
-    if(ACTIVE_TAB >= TABS.len) {
-        ACTIVE_TAB = TABS.len -1;
+    if(TABS.len == 0) {
+        ACTIVE_TAB = 0;
+    } else if(ACTIVE_TAB >= TABS.len) {
+        ACTIVE_TAB = TABS.len - 1;
     }
 
     return TABS.len;
@@ -925,8 +931,8 @@ struct View* tab_active_view(struct Tab *tab) {
 }
 
 int tabs_last(void) {
-    if(TABS.len) {
-        ACTIVE_TAB = TABS.len-1;
+    if(TABS.len > 0) {
+        ACTIVE_TAB = TABS.len - 1;
     }
     return ACTIVE_TAB;
 }

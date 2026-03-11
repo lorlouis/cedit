@@ -70,7 +70,7 @@ int buffer_init_from_path(
         xfree(line);
 
         if(len == -1 && ferror(f)) {
-            err = ferror(f);
+            err = errno ? errno : EIO;
             goto err;
         }
         fclose(f);
@@ -93,6 +93,7 @@ int buffer_init_from_path(
 
 /// Width of the number line for that given buffer
 int buffer_num_width(struct Buffer *buff) {
+    if(buff->lines.len <= 1) return 2;
     int num_width = ceil(log10((double)buff->lines.len)) + 1;
     if(num_width < 2) num_width = 2;
     return num_width;
@@ -137,7 +138,7 @@ int buffer_dump(
         struct Line *line = buffer_line_get(buff, i);
         int ret = fprintf(f, "%.*s\n", (int)str_cstr_len(&line->text), str_as_cstr(&line->text));
         if(ret < 0) {
-            errno = ferror(f);
+            if(!errno) errno = EIO;
             fclose(f);
             return -1;
         }

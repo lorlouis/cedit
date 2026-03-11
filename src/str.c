@@ -110,7 +110,7 @@ int vec_insert(Vec *v, size_t idx, void *data) {
         vec_push(v, data);
         return 0;
     }
-    vec_grow_to_fit(v, v->len + 1);
+    vec_grow_to_fit(v, 1);
     v->len += 1;
     // it also copies the extra '\0' at len so not a buffer overflow
     memmove(vec_get(v, idx+1), vec_get(v, idx), v->type_size * (v->len - idx));
@@ -262,6 +262,7 @@ int str_insert_at(Str *s, size_t idx, const char *o, size_t len) {
 
     vec_grow_to_fit(&s->v, str_size(s) + len);
     size_t byte_idx = str_get_char_byte_idx(s, idx);
+    if(byte_idx == (size_t)-1) return -1;
     // move the overlapping part to the end of the line
     memmove(s->v.buf + byte_idx + len, s->v.buf + byte_idx, str_size(s) - byte_idx);
     // copy o into the overlap
@@ -294,9 +295,9 @@ size_t str_cstr_len(const Str *s) {
 }
 
 static int size_t_cmp(const void *a, const void *b) {
-    if((*(const size_t*)a < *(const size_t*)b)) return -1;
-    if((*(const size_t*)a > *(const size_t*)b) > 0) return 1;
-    return 0;
+    size_t va = *(const size_t*)a;
+    size_t vb = *(const size_t*)b;
+    return (va > vb) - (va < vb);
 }
 
 // Returns the number of UTF-8 code points.
@@ -334,7 +335,7 @@ int str_remove(Str *s, size_t start, size_t end) {
     ((char*)s->v.buf)[s->v.len-1] = '\0';
 
     if(s->char_pos.len) {
-        vec_trunk(&s->char_pos, end - start);
+        vec_trunk(&s->char_pos, start);
         build_character_table(&s->char_pos, start_idx, s->v.buf, s->v.len);
     }
 
@@ -380,13 +381,16 @@ Str str_from_cstr(const char *s) {
 
 // Equivalent to idx + <char*> on a cstr
 const char* str_tail_cstr(const Str *s, size_t idx) {
-    return str_as_cstr(s) + str_get_char_byte_idx(s, idx);
+    size_t byte_off = str_get_char_byte_idx(s, idx);
+    if(byte_off == (size_t)-1) return str_as_cstr(s);
+    return str_as_cstr(s) + byte_off;
 }
 
 // Returns a readonly Str containing the chars after char idx
 Str str_tail(const Str *s, size_t idx) {
     if(idx == 0) return *s;
     size_t byte_off = str_get_char_byte_idx(s, idx);
+    if(byte_off == (size_t)-1) byte_off = 0;
     Vec v = vec_tail(&s->v, byte_off);
     Vec char_pos = {0};
     if(!vec_is_empty(&s->char_pos)) {

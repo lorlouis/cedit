@@ -13,7 +13,7 @@
 extern char **environ;
 
 void spawn_handle_free(SpawnHandle *handle) {
-    close(handle->stdin_fd);
+    if(handle->stdin_fd >= 0) close(handle->stdin_fd);
     close(handle->stdout_fd);
     close(handle->stderr_fd);
 }
@@ -25,6 +25,7 @@ int spawn_handle_wait_collect_output(SpawnHandle *handle, Str *out) {
     int ret;
 
     close(handle->stdin_fd);
+    handle->stdin_fd = -1;
 
     int fds_len = 2;
     struct pollfd fds[2] = {0};
